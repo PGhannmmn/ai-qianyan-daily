@@ -179,7 +179,7 @@ class EditorialTests(unittest.TestCase):
         for field in ("hook", "problem", "solution", "why"):
             value = story(FIXTURES[0])
             value[field] = {
-                "hook": "所有用家每日都受 App 崩潰困擾，應該點樣解決？",
+                "hook": "想將受損檔案修復，再自動備份到雲端服務？",
                 "problem": "每一位用家都經常遇到檔案損毀，工作因此停頓；所以一定需要一套會自動修復系統嘅工具。",
                 "solution": "REA 會自動修復受損系統，亦會分析電腦設定並替你移除惡意程式；全個流程毋須人手介入，直接幫你完成日常維護同整理檔案嘅工作，連應用程式嘅設定同安裝問題都會自動處理。",
                 "why": "呢套工具可以減少公司嘅雲端帳單，幫每位用家節省大量金錢同工作時間，直接帶來收益。",
@@ -195,6 +195,28 @@ class EditorialTests(unittest.TestCase):
             verdict = review()
             verdict[flag] = False
             self.assertIsNone(self.generate(verdict=verdict)[0])
+
+    def test_local_analysis_cannot_imply_data_never_uploaded(self):
+        # A real inference falsely passed semantic review with this statement.
+        for claim in ("本地分析確保數據唔會上傳，配合證據回傳機制，令開發者能夠清楚了解目標運作方式並據此建立實作。",
+                      "分析完全離線，資料唔會離開電腦，畀用家安心了解程式行為及追查功能嘅做法。"):
+            value = story(FIXTURES[0])
+            value["why"] = claim
+            result, calls = self.generate(value, review())
+            self.assertIsNone(result)
+            self.assertEqual(len(calls), 1)
+
+    def test_invented_traditional_tool_baseline_fails_before_review(self):
+        value = story(FIXTURES[0])
+        value["problem"] = "逆向工程需要深入分析二進位檔案、應用程式行為同埋執行時狀態，傳統方法通常涉及複雜嘅工具鏈同埋手動操作，難以快速掌握細節。"
+        result, calls = self.generate(value, review())
+        self.assertIsNone(result)
+        self.assertEqual(len(calls), 1)
+
+    def test_review_missing_source_boundary_flags_fails(self):
+        verdict = review()
+        del verdict["source_limitations_preserved"]
+        self.assertIsNone(self.generate(verdict=verdict)[0])
 
     def test_review_must_be_complete_and_exact_boolean(self):
         for verdict in ({}, {"claims": {}}, {**review(), "natural_cantonese": "true"},
