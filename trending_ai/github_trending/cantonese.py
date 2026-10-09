@@ -253,7 +253,9 @@ PRIVACY_GUARANTEE = re.compile(
 BASELINE_CLAIM = re.compile(
     r"(?:傳統|以往|現有|其他).{0,12}(?:方法|工具|方案).{0,40}"
     r"(?:複雜|困難|難以|費時|耗時|手動|繁瑣)|"
-    r"(?:通常|普遍|人人|所有用家).{0,24}(?:困擾|困難|難以|費時|耗時)")
+    r"(?:通常|普遍|人人|所有用家).{0,24}(?:困擾|困難|難以|費時|耗時)|"
+    r"(?:模擬器|工具鏈|環境|安裝|設定).{0,12}(?:複雜|繁瑣|費時|耗時)|"
+    r"(?:複雜|繁瑣|費時|耗時).{0,8}(?:設定|配置|操作)")
 # Public short posts use a plain-language explanation instead of these
 # internal protocol/agent acronyms. Project names and source quotes are exempt.
 EDITORIAL_JARGON = re.compile(r"\b(?:MCP|Agent|IPC|ASAR)\b", re.I)
@@ -276,6 +278,14 @@ problem 交代條件（例如冇原始碼），solution 交代做法及有用特
 why 必須補充對同一情境嘅讀者意義或來源限制，唔再重複 solution 嘅功能清單。
 例如有證據及限制嘅結果，價值係讀者可以沿線索追查同分辨仍未知嘅部分；
 只在來源支持證據及限制時使用呢個角度，唔增加能力或保證。
+唔加入模擬器設定複雜、節省時間等背景。why 可指出做法嘅差異或來源邊界，
+但不可編造使用體驗。引用來源全部保留條件，唔把支援格式等同全部程式可跑。
+文案風格示例（唔係本次事實，絕不搬用示例功能或引文）：
+「只記得檔名一部分，點樣搵返個檔案？」→ 需要按名稱片段搜尋 →
+工具接收搜尋字樣並篩選副檔名 → 預設略過隱藏檔，理解呢點先讀得懂結果。
+「冇原始碼，想知道一個 App 嘅功能點運作？」→ 手上只有程式檔案 →
+AI 助手接駁分析工具，回傳發現同依據 → 可以沿線索追查，亦知道未能確認嘅部分。
+每段應自然串成一個具體故事；唔加書面「目的／使／讓」，唔把功能再抄一遍。
 不要「個專案叫」「目的係令用家」「你有冇試過」；唔直譯簡介。
 hook 要源於具體任務，12–55 UTF-16 units，一行，避免 recent_hooks 嘅句式。
 problem：25–100 units，解釋具體需要；solution：50–155 units，提專案名，
@@ -308,12 +318,15 @@ no_inferred_privacy_or_baseline_claims 只在沒有上述推論或比較時為 t
 檢查自然香港廣東話、繁體字、易明程度、唔似 literal README 翻譯。
 將專門名詞用一般讀者睇得明嘅方式解釋；唔增加新事實。
 distinct_reader_value：why 要交代對讀者嘅實際意義／限制，不能只重述 solution。
-只回以下 JSON，任何不確定都用 false / "unsupported"：
-{"claims":{"hook":"supported","problem":"supported","solution":"supported","why":"supported"},
- "specific_problem":true,"concrete_solution":true,"distinctive_capability":true,
- "natural_cantonese":true,"not_literal_translation":true,"tech_enthusiast_readable":true,
- "source_limitations_preserved":true,"no_inferred_privacy_or_baseline_claims":true,
- "distinct_reader_value":true}
+逐項先核查，唔照抄範本。以下係預設拒絕狀態，只有查證支持後先逐項改成
+"supported" / true。特別拒絕來源冇講嘅模擬器／工具／設定複雜等背景，
+同埋未由所選引文支持嘅「方便分析、驗證、節省時間」等利益。
+只回以下 JSON，任何不確定都保持 false / "unsupported"：
+{"claims":{"hook":"unsupported","problem":"unsupported","solution":"unsupported","why":"unsupported"},
+ "specific_problem":false,"concrete_solution":false,"distinctive_capability":false,
+ "natural_cantonese":false,"not_literal_translation":false,"tech_enthusiast_readable":false,
+ "source_limitations_preserved":false,"no_inferred_privacy_or_baseline_claims":false,
+ "distinct_reader_value":false}
 """.strip()
 
 
