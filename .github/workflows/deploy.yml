@@ -1,0 +1,67 @@
+# Deploy workflow proposal — apply via GitHub web UI
+# (Muse cannot modify .github/workflows/ via API; user applies manually)
+#
+# Purpose: manually deploy the static site to GitHub Pages WITH the
+# custom-domain CNAME file (written by pipeline/daily.py into site/).
+# This is what makes https://orbisignalmedia.duckdns.org go live.
+#
+# Steps for the user:
+# 1. Repo → .github/workflows/ → "Add file" → "Create new file"
+# 2. Name it: deploy.yml
+# 3. Paste the YAML below, then "Commit changes"
+# 4. Actions → "Deploy site" → Run workflow
+#
+# Notes:
+# - Manual trigger only (no schedule). Safe to run anytime.
+# - Builds landing page only (--landing-only): no articles published.
+# - CNAME (orbisignalmedia.duckdns.org) is written by daily.py into site/;
+#   GitHub Pages picks it up automatically and provisions HTTPS.
+# - base-url uses the custom domain so sitemap.xml/RSS are canonical.
+
+name: Deploy site
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build site (landing page only)
+        run: |
+          python pipeline/daily.py --date "$(date -u +%F)" --out site \
+            --base-url https://orbisignalmedia.duckdns.org/ --landing-only
+          echo "--- site/ contents ---"
+          ls site/
+          echo "--- CNAME ---"
+          cat site/CNAME
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
