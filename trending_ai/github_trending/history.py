@@ -61,6 +61,28 @@ class History:
         except (sqlite3.Error, OSError):
             raise HistoryError("private draft reservation failed") from None
 
+    def recent_hooks(self) -> list[str]:
+        """Read recent reviewed draft hooks through the existing ledger schema.
+
+        No database creation, schema migration or production-state writes.
+        """
+        if not self.path.exists():
+            return []
+        try:
+            with closing(sqlite3.connect(self.path.resolve().as_uri() + "?mode=ro", uri=True)) as db:
+                rows = db.execute("SELECT payload FROM drafts ORDER BY observed_at DESC LIMIT 12").fetchall()
+            hooks = []
+            for row in rows:
+                value = json.loads(row[0])
+                hook = value.get("editorial_story", {}).get("hook")
+                if hook is not None:
+                    if not isinstance(hook, str) or not 1 <= len(hook) <= 100:
+                        raise ValueError
+                    hooks.append(hook)
+            return hooks
+        except (sqlite3.Error, OSError, ValueError, AttributeError, TypeError):
+            raise HistoryError("hook history unreadable; selection stopped") from None
+
 
 def load_external_history(path) -> tuple[set[int], set[str]]:
     """Explicit bridge export; does not guess the unavailable Muse schema."""

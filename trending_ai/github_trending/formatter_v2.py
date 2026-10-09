@@ -112,6 +112,26 @@ def validate_post(content: str, repo: TrendingRepo) -> None:
         raise ValueError("Unexpected control character")
 
 
+def format_story(repo: TrendingRepo, story: dict) -> str:
+    """Evidence-reviewed prose first; the existing formatter supplies all facts.
+
+    Never truncate a claim or silently remove a required story component.
+    """
+    repo.validate()
+    fields = [story[key] for key in ("hook", "problem", "solution", "why")]
+    if any(not isinstance(s, str) or not s.strip() for s in fields):
+        raise ValueError("Incomplete editorial story")
+    # Keep the original deterministic metadata construction and validation.
+    original = format_post(repo)
+    header, _, tail = original.split("\n\n", 2)
+    header = header.replace("｜" + repo.name, "｜" + repo.owner + "/" + repo.name)
+    content = "\n\n".join(fields) + "\n\n" + header + "\n" + tail
+    validate_post(content, repo)
+    if not 300 <= utf16_len(content) <= 430:
+        raise ValueError("Editorial target must be 300–430 UTF-16 units")
+    return content
+
+
 def generate_json(data: dict) -> dict:
     repo = TrendingRepo.from_dict(data)
     post = format_post(repo)
