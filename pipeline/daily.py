@@ -35,7 +35,8 @@ sys.path.insert(0, os.path.join(HERE, "..", "..", "src"))
 sys.path.insert(0, os.path.expanduser(
     "~/workspace/orbisignal-media/threads-publisher/src"))
 
-from assemble import NullTranslator, assemble_brief  # noqa: E402
+from assemble import (NullTranslator, assemble_brief,  # noqa: E402
+                      is_genuine_simplified_editorial)
 try:
     import sitegen  # noqa: E402  (repo layout: pipeline/vendor/)
 except ImportError:
@@ -147,6 +148,9 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
     log.info("fact-packs passing QA: %d", len(packs))
 
     # 3+4. assemble + draft QA (max 2 briefs/day)
+    # briefs: list of (brief, pack) tuples. The pack travels WITH its brief,
+    # so a rejected/skipped article can never shift its URL/title/date onto
+    # another article (the old positional indexing had this bug).
     briefs = []
     for pack in packs[:2]:
         b = assemble_brief(pack.__dict__, date, translator=translator)
@@ -154,11 +158,16 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
         if issues:
             log.warning("brief rejected: %s", issues)
             continue
-        briefs.append(b)
+        if not is_genuine_simplified_editorial(b["text"]):
+            log.warning("brief rejected: not genuine Simplified Chinese "
+                        "content (tier=%s); skipping, not publishing "
+                        "English-as-Chinese", b["tier"])
+            continue
+        briefs.append((b, pack))
     log.info("briefs passing QA: %d", len(briefs))
 
     # 5. site build from assembled briefs
-    _write_briefs_as_drafts(date, briefs, packs)
+    _write_briefs_as_drafts(date, briefs)
     result = sitegen.generate_site([date], out_dir, base_url, dry_run=True)
 
     # 6. ALWAYS write the run log (heartbeat, even with zero articles)
@@ -166,7 +175,7 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
         "date": date,
         "fact_packs": len(packs),
         "briefs": len(briefs),
-        "tiers": [b["tier"] for b in briefs],
+        "tiers": [b["tier"] for b, _ in briefs],
         "site_files": len(result["files"]),
         "safety_issues": result["safety_issues"],
         "ts": datetime.now(timezone.utc).isoformat(),
@@ -178,16 +187,20 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
     return summary
 
 
-def _write_briefs_as_drafts(date: str, briefs: list, packs: list) -> None:
-    """Stage assembled briefs where sitegen expects validated drafts."""
+def _write_briefs_as_drafts(date: str, briefs: list) -> None:
+    """Stage assembled briefs where sitegen expects validated drafts.
+
+    briefs: list of (brief_dict, pack) tuples. Metadata (url, published_at,
+    source_name) comes from the pack PAIRED with each brief — never from
+    positional indexing into a separate pack list.
+    """
     os.makedirs(sitegen.STATE_DIR, exist_ok=True)
     drafts = {"drafts": [{"text": b["text"], "source": b["source"],
-                          "fact_index": i, "url": b["url"],
-                          "published_at": packs[i].published_at
-                          if i < len(packs) else "",
-                          "source_name": b["source"]}
-                         for i, b in enumerate(briefs)],
-              "assembled": True, "tiers": [b["tier"] for b in briefs]}
+                          "url": pack.url,
+                          "published_at": pack.published_at or "",
+                          "source_name": pack.source_name}
+                         for b, pack in briefs],
+              "assembled": True, "tiers": [b["tier"] for b, _ in briefs]}
     with open(os.path.join(sitegen.STATE_DIR, f"simp_drafts_{date}.json"),
               "w", encoding="utf-8") as fh:
         json.dump(drafts, fh, ensure_ascii=False)
