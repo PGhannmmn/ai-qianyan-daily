@@ -218,6 +218,22 @@ class EditorialTests(unittest.TestCase):
         del verdict["source_limitations_preserved"]
         self.assertIsNone(self.generate(verdict=verdict)[0])
 
+    def test_real_technical_draft_uses_unexplained_jargon(self):
+        value = story(FIXTURES[0])
+        value["solution"] = "使用 REA 連接 Agent，透過 MCP 呼叫工具檢查目標並追蹤程式碼，分析結果會包含證據，讓 Agent 用嚟解釋行為或編寫實作。"
+        result, calls = self.generate(value, review())
+        self.assertIsNone(result)
+        self.assertEqual(len(calls), 1)
+
+    def test_value_paragraph_cannot_only_restate_features(self):
+        value = story(FIXTURES[0])
+        value["why"] = "分析結果包含證據同限制，令 AI 助手可以根據事實解釋行為並編寫實作，解決缺乏原始碼下難以理解功能嘅問題。"
+        verdict = review()
+        verdict["distinct_reader_value"] = False
+        result, calls = self.generate(value, verdict)
+        self.assertIsNone(result)
+        self.assertEqual(len(calls), 2)
+
     def test_review_must_be_complete_and_exact_boolean(self):
         for verdict in ({}, {"claims": {}}, {**review(), "natural_cantonese": "true"},
                         {**review(), "extra": True}):

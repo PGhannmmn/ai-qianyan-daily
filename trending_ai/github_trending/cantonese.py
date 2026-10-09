@@ -240,7 +240,7 @@ STORY_KEYS = {"status", *STORY_FIELDS, "citations"}
 REVIEW_FLAGS = ("specific_problem", "concrete_solution", "distinctive_capability",
                 "natural_cantonese", "not_literal_translation",
                 "tech_enthusiast_readable", "source_limitations_preserved",
-                "no_inferred_privacy_or_baseline_claims")
+                "no_inferred_privacy_or_baseline_claims", "distinct_reader_value")
 MAX_README_PROMPT = 16_000
 BOILERPLATE = re.compile(r"個專案叫|目的係令用家|你有冇試過|有冇試過|改變世界|革命性")
 GENERIC_WHY = re.compile(r"^(?:呢個專案)?(?:好有用|值得關注|提升效率|更方便)[。！!]*$")
@@ -254,6 +254,9 @@ BASELINE_CLAIM = re.compile(
     r"(?:傳統|以往|現有|其他).{0,12}(?:方法|工具|方案).{0,40}"
     r"(?:複雜|困難|難以|費時|耗時|手動|繁瑣)|"
     r"(?:通常|普遍|人人|所有用家).{0,24}(?:困擾|困難|難以|費時|耗時)")
+# Public short posts use a plain-language explanation instead of these
+# internal protocol/agent acronyms. Project names and source quotes are exempt.
+EDITORIAL_JARGON = re.compile(r"\b(?:MCP|Agent|IPC|ASAR)\b", re.I)
 
 STORY_SYSTEM_PROMPT = """
 你係香港科技編輯，寫畀科技愛好者睇，唔假設讀者熟悉開發工具。
@@ -266,6 +269,13 @@ problem 優先講來源明示嘅任務與條件，例如冇原始碼了解功能
 本地分析唔等於數據唔會上傳、完全離線或私隱保證。必須保留來源嘅限制；
 若結果會交畀 agent / 模型供應商，唔可暗示資料只留喺本地。
 集中一個使用情境同一項特色，唔堆砌功能或 Setup 細節；解釋術語用途。
+正文唔用 MCP、Agent、IPC、ASAR；用「AI 助手」「接駁分析工具」等易明說法。
+用「冇」「畀」「同」「可以」等自然廣東話，避免「使用／透過／並且／讓」。
+hook 可用來源嘅具體例子或任務，唔好只寫抽象「分析目標」。
+problem 交代條件（例如冇原始碼），solution 交代做法及有用特色；
+why 必須補充對同一情境嘅讀者意義或來源限制，唔再重複 solution 嘅功能清單。
+例如有證據及限制嘅結果，價值係讀者可以沿線索追查同分辨仍未知嘅部分；
+只在來源支持證據及限制時使用呢個角度，唔增加能力或保證。
 不要「個專案叫」「目的係令用家」「你有冇試過」；唔直譯簡介。
 hook 要源於具體任務，12–55 UTF-16 units，一行，避免 recent_hooks 嘅句式。
 problem：25–100 units，解釋具體需要；solution：50–155 units，提專案名，
@@ -297,11 +307,13 @@ no_inferred_privacy_or_baseline_claims 只在沒有上述推論或比較時為 t
 必須有具體問題、實際解法、一項有用特色及其對同一情境嘅意義。
 檢查自然香港廣東話、繁體字、易明程度、唔似 literal README 翻譯。
 將專門名詞用一般讀者睇得明嘅方式解釋；唔增加新事實。
+distinct_reader_value：why 要交代對讀者嘅實際意義／限制，不能只重述 solution。
 只回以下 JSON，任何不確定都用 false / "unsupported"：
 {"claims":{"hook":"supported","problem":"supported","solution":"supported","why":"supported"},
  "specific_problem":true,"concrete_solution":true,"distinctive_capability":true,
  "natural_cantonese":true,"not_literal_translation":true,"tech_enthusiast_readable":true,
- "source_limitations_preserved":true,"no_inferred_privacy_or_baseline_claims":true}
+ "source_limitations_preserved":true,"no_inferred_privacy_or_baseline_claims":true,
+ "distinct_reader_value":true}
 """.strip()
 
 
@@ -398,6 +410,8 @@ def validate_story(story: dict, packet: dict, recent_hooks=()) -> list[str]:
             issues.append("privacy-guarantee-" + field)
         if BASELINE_CLAIM.search(text):
             issues.append("comparative-baseline-" + field)
+        if EDITORIAL_JARGON.search(text):
+            issues.append("unexplained-jargon-" + field)
         summary_issues = validate_summary(text, source)
         if summary_issues or unsafe_text(text) or BOILERPLATE.search(text):
             issues.append("unsafe-or-unsupported-" + field)
