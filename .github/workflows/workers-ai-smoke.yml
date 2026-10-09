@@ -1,0 +1,82 @@
+
+name: Cloudflare Workers AI Smoke Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify Workers AI connection
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+          import urllib.error
+
+          account = os.environ.get("CF_ACCOUNT_ID", "")
+          token = os.environ.get("CF_API_TOKEN", "")
+
+          if not account or not token:
+              sys.exit("FAIL: Missing GitHub secret or variable")
+
+          url = (
+              f"https://api.cloudflare.com/client/v4/"
+              f"accounts/{account}/ai/run/"
+              "@cf/zai-org/glm-4.7-flash"
+          )
+
+          payload = {
+              "messages": [
+                  {
+                      "role": "user",
+                      "content": "请用简体中文简短回答：连接成功。"
+                  }
+              ],
+              "max_completion_tokens": 128
+          }
+
+          req = urllib.request.Request(
+              url,
+              data=json.dumps(payload).encode(),
+              headers={
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/json"
+              },
+              method="POST"
+          )
+
+          try:
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  data = json.load(resp)
+          except urllib.error.HTTPError as exc:
+              sys.exit(f"FAIL: HTTP {exc.code}")
+          except Exception as exc:
+              sys.exit(f"FAIL: {type(exc).__name__}")
+
+          if not data.get("success"):
+              sys.exit("FAIL: Workers AI API returned an error")
+
+          result = data.get("result") or {}
+          choices = result.get("choices") or []
+          content = (
+              (choices[0].get("message") or {}).get("content")
+              if choices else result.get("response")
+          )
+
+          if not isinstance(content, str) or not content.strip():
+              sys.exit("FAIL: No readable model response")
+
+          print("PASS: Cloudflare Workers AI inference succeeded")
+          print("No news or website content was published")
+          PY
