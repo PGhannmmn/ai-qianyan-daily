@@ -107,15 +107,41 @@ def _run_landing_only(date: str, out_dir: str, base_url: str) -> dict:
     return summary
 
 
+def _llm_brief(llm, pack, date: str):
+    """Generate one brief via Workers AI LLM. Returns None on ANY failure
+    (fail-closed: the article is skipped)."""
+    from llm import WorkersAIError  # noqa: E402
+    try:
+        text = llm.summarize(pack.__dict__).strip()
+    except WorkersAIError as exc:
+        log.warning("LLM summarize failed, skipping article: %s", exc)
+        return None
+    # Deterministic attribution: URL on its own line, not left to the model.
+    if pack.url not in text:
+        text = text.rstrip() + "\n原文链接：" + pack.url
+    return {"text": text, "source": pack.source_name, "url": pack.url,
+            "date": date, "tier": "llm", "chars": len(text)}
+
+
 def run_pipeline(date: str, out_dir: str, base_url: str,
                  fetch=None, translator=None,
-                 landing_only: bool = False) -> dict:
+                 landing_only: bool = False,
+                 use_llm: bool = False) -> dict:
     """Run the full daily pipeline. Returns a summary dict."""
     if landing_only:
         return _run_landing_only(date, out_dir, base_url)
     qa_draft_simp, qa_fact_pack, R = _load_full_pipeline()
     if fetch is None:
         fetch = lambda source: R.fetch_rss(source)
+    llm = None
+    if use_llm:
+        from llm import WorkersAIError, WorkersAILLM  # noqa: E402
+        try:
+            llm = WorkersAILLM()
+        except WorkersAIError as exc:
+            # Fail closed: no credentials/API -> zero briefs, never English.
+            log.error("LLM unavailable (%s); skipping all articles", exc)
+            llm = None
     # 1+2. research + fact-pack QA
     packs = []
     for source in _default_feeds(R):
@@ -153,7 +179,14 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
     # another article (the old positional indexing had this bug).
     briefs = []
     for pack in packs[:2]:
-        b = assemble_brief(pack.__dict__, date, translator=translator)
+        if llm is not None:
+            b = _llm_brief(llm, pack, date)
+            if b is None:
+                continue  # fail-closed: skip, never English-as-Chinese
+        else:
+            if use_llm:
+                continue  # LLM requested but unavailable: zero briefs
+            b = assemble_brief(pack.__dict__, date, translator=translator)
         issues = qa_draft_simp(b["text"], b["source"], pack)
         if issues:
             log.warning("brief rejected: %s", issues)
@@ -214,11 +247,15 @@ def main() -> int:
     ap.add_argument("--landing-only", action="store_true",
                     help="build the informational landing page only "
                          "(Phase 4.3 first deployment; no articles)")
+    ap.add_argument("--llm", action="store_true",
+                    help="use Cloudflare Workers AI for original Chinese "
+                         "summaries (needs CF_API_TOKEN/CF_ACCOUNT_ID)")
     args = ap.parse_args()
     # Third-party translation disabled: original-language tier only.
     summary = run_pipeline(args.date, args.out, args.base_url,
                            translator=NullTranslator(),
-                           landing_only=args.landing_only)
+                           landing_only=args.landing_only,
+                           use_llm=args.llm)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if not summary["safety_issues"] else 1
 
