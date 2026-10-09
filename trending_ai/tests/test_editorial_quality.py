@@ -109,6 +109,8 @@ class EditorialTests(unittest.TestCase):
                 self.assertIsNotNone(result)
                 self.assertEqual(len(calls), 2)
                 first, second = [json.loads(req.data) for req in calls]
+                self.assertEqual(first["response_format"], {"type": "json_object"})
+                self.assertEqual(first["temperature"], 0.2)
                 prompt = json.loads(first["messages"][1]["content"])
                 self.assertNotIn("readme", prompt["official_sources"])
                 self.assertTrue(prompt["official_sources"]["sources"])
@@ -241,6 +243,17 @@ class EditorialTests(unittest.TestCase):
     def test_no_credentials_does_not_call_cloudflare(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(c.generate_editorial_story(project(FIXTURES[0]).evidence()))
+
+    def test_malformed_model_json_logs_only_numeric_diagnostics(self):
+        def invalid(_):
+            return json.dumps({"choices": [{"finish_reason": "length", "message": {
+                "content": '{"value":"Bearer ' + FAKE}}]}).encode()
+        with patch.dict(os.environ, {"CF_API_TOKEN": FAKE, "CF_ACCOUNT_ID": "account"}), \
+             self.assertLogs("github_trending.cantonese", level="WARNING") as logs:
+            self.assertIsNone(c.generate_editorial_story(project(FIXTURES[0]).evidence(), _http=invalid))
+        output = "\n".join(logs.output)
+        self.assertNotIn(FAKE, output)
+        self.assertIn("finish=length", output)
 
     def test_unknown_id_fails_and_quotes_are_backend_owned(self):
         ev = project(FIXTURES[0]).evidence()
