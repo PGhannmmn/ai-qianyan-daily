@@ -129,10 +129,14 @@ def assemble_brief(pack: Dict[str, Any], date: str,
 
 
 CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]")
-MIN_CJK_RATIO = 0.5
+URL_RE = re.compile(r"https?://[^\s)）】》\"']+")
+MIN_CJK_RATIO = 0.4
 
 
 def cjk_ratio(text: str) -> float:
+    # URLs are metadata, not editorial content: exclude them so genuine
+    # Chinese tech articles (with long source URLs) are not penalized.
+    text = URL_RE.sub(" ", text)
     chars = [c for c in text if not c.isspace()]
     if not chars:
         return 0.0
