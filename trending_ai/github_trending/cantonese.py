@@ -194,7 +194,8 @@ def generate_cantonese_summary(name: str, description: str, language: str,
                 {"role": "system", "content": CANTONESE_SYSTEM_PROMPT},
                 {"role": "user", "content": prompt},
             ],
-            "max_tokens": 300,
+            "max_completion_tokens": 512,
+            "chat_template_kwargs": {"enable_thinking": False},
         }).encode("utf-8")
         req = urllib.request.Request(
             url, data=body,
