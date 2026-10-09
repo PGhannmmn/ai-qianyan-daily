@@ -372,8 +372,14 @@ def validate_story(story: dict, packet: dict, recent_hooks=()) -> list[str]:
         lo, hi = limits[field]
         if not lo <= utf16_len(text) <= hi:
             issues.append("length-" + field)
-        if validate_summary(text, source) or unsafe_text(text) or BOILERPLATE.search(text):
+        summary_issues = validate_summary(text, source)
+        if summary_issues or unsafe_text(text) or BOILERPLATE.search(text):
             issues.append("unsafe-or-unsupported-" + field)
+            # Categories only, never source/model text or credential fragments.
+            if _contains_simplified(text):
+                issues.append("simplified-" + field)
+            if set(NUMBER_RE.findall(text)) - set(NUMBER_RE.findall(source)):
+                issues.append("invented-number-" + field)
         quotes = citations[field]
         if (not isinstance(quotes, list) or not 1 <= len(quotes) <= 3
                 or any(not isinstance(q, str) or not 10 <= len(q) <= 600
@@ -412,14 +418,25 @@ def _editorial_request(llm, system: str, payload: dict) -> dict:
                      {"role": "user", "content": json.dumps(payload, ensure_ascii=False)}],
         "max_completion_tokens": 2200,
         "chat_template_kwargs": {"enable_thinking": False},
+        "response_format": {"type": "json_object"},
+        "temperature": 0.2,
     }, ensure_ascii=False).encode("utf-8")
     req = urllib.request.Request(url, data=body,
                                  headers={"Content-Type": "application/json"}, method="POST")
     raw = llm._do_request(req)  # Existing allowlist, auth and redirect rejection.
-    text = extract_response_text(json.loads(raw.decode("utf-8"))).strip()
+    data = json.loads(raw.decode("utf-8"))
+    text = extract_response_text(data).strip()
     if text.startswith("```json") and text.endswith("```"):
         text = text[7:-3].strip()
-    value = json.loads(text)
+    try:
+        value = json.loads(text)
+    except json.JSONDecodeError as exc:
+        choices = data.get("choices") or (data.get("result") or {}).get("choices") or []
+        reason = choices[0].get("finish_reason") if choices else None
+        reason = reason if reason in ("stop", "length", "content_filter") else "unreported"
+        log.warning("Editorial JSON invalid (chars=%d, position=%d, finish=%s)",
+                    len(text), exc.pos, reason)
+        raise
     if not isinstance(value, dict):
         raise ValueError("invalid structured response")
     return value
