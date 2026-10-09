@@ -1,0 +1,94 @@
+name: Phase 4.5 Live AI Dry Run (No Publish)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: phase45-live-ai-dry-run
+  cancel-in-progress: false
+
+jobs:
+  live-dry-run:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+
+    steps:
+      - name: Checkout pinned reviewed pipeline
+        uses: actions/checkout@v4
+        with:
+          ref: ca590da1c912dd832dcd6a81eafa8d54c7e8ea11
+          persist-credentials: false
+
+      - name: Verify exact commit
+        run: |
+          test "$(git rev-parse HEAD)" = \
+            "ca590da1c912dd832dcd6a81eafa8d54c7e8ea11"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Read-only live research and capped AI validation
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+        run: |
+          python -B - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from pipeline import daily
+          from pipeline.llm import WorkersAILLM, WorkersAIError
+
+          requests_made = 0
+
+          class CappedWorkersAI(WorkersAILLM):
+              def summarize(self, pack):
+                  global requests_made
+                  if requests_made >= 2:
+                      raise WorkersAIError("dry_run_request_cap_reached")
+                  requests_made += 1
+                  return super().summarize(pack)
+
+          result = daily.run_pipeline(
+              date=datetime.now(timezone.utc).date().isoformat(),
+              out_dir=str(Path(os.environ["RUNNER_TEMP"]) / "preview"),
+              base_url="https://pghannmmn.github.io/ai-qianyan-daily/",
+              use_llm=True,
+              dry_run=True,
+              llm_factory=CappedWorkersAI,
+          )
+
+          # Print fixed-field counters only. Never print articles or API responses.
+          print("STATUS", result.get("status"))
+          for field in ("fact_packs", "llm_attempts", "llm_successes", "briefs", "skipped"):
+              print(field.upper(), result.get(field))
+          print("LIVE_API_REQUESTS", requests_made)
+
+          if result.get("dry_run") is not True or result.get("deployed") is not False:
+              raise SystemExit("FAIL: dry-run safety invariant")
+          if result.get("status") == "failed" or result.get("errors") or result.get("safety_issues"):
+              raise SystemExit("FAIL: pipeline reported errors or safety issues")
+          if not requests_made or not result.get("llm_successes"):
+              raise SystemExit("INCONCLUSIVE: no successful live model response")
+          if result.get("status") != "validated" or not result.get("briefs"):
+              raise SystemExit("INCONCLUSIVE: no article passed final QA")
+          print("PASS: live RSS + Workers AI + QA completed without publication")
+          PY
+
+      - name: Verify repository unchanged
+        if: always()
+        run: |
+          git diff --quiet
+          git diff --cached --quiet
+          test -z "$(git ls-files --others --exclude-standard)"
