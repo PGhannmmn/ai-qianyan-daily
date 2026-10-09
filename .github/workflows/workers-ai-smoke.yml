@@ -43,7 +43,10 @@ jobs:
                       "content": "请用简体中文简短回答：连接成功。"
                   }
               ],
-              "max_completion_tokens": 128
+              "max_completion_tokens": 512,
+              "chat_template_kwargs": {
+                "enable_thinking": False
+}
           }
 
           req = urllib.request.Request(
