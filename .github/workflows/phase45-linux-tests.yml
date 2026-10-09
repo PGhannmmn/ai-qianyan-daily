@@ -1,0 +1,73 @@
+name: Phase 4.5 Linux Compatibility Tests
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-validation:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    env:
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONNOUSERSITE: "1"
+      CF_API_TOKEN: ""
+      CF_ACCOUNT_ID: ""
+
+    steps:
+      - name: Checkout pinned integration commit
+        uses: actions/checkout@v4
+        with:
+          ref: ca590da1c912dd832dcd6a81eafa8d54c7e8ea11
+          persist-credentials: false
+
+      - name: Verify checkout SHA
+        run: |
+          test "$(git rev-parse HEAD)" = \
+            "ca590da1c912dd832dcd6a81eafa8d54c7e8ea11"
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run offline regression tests
+        run: |
+          python -B -m tests.run_tests \
+            --report "$RUNNER_TEMP/phase45-tests.json"
+
+      - name: Validate test results
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["RUNNER_TEMP"]) / "phase45-tests.json"
+          report = json.loads(path.read_text(encoding="utf-8"))
+
+          expected = {
+              "tests_run": 226,
+              "failures": 0,
+              "errors": 0,
+              "skipped": 0,
+              "network": "denied",
+          }
+
+          for key, value in expected.items():
+              if report.get(key) != value:
+                  raise SystemExit(f"FAIL: unexpected {key}")
+
+          print("PASS: 226 offline tests on Linux/Python 3.12")
+          PY
+
+      - name: Verify checkout unchanged
+        if: always()
+        run: |
+          git diff --exit-code
+          git diff --cached --exit-code
+          test -z "$(git ls-files --others --exclude-standard)"
