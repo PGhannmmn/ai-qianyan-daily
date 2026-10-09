@@ -33,6 +33,7 @@ injection scan, length cap.
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any, Dict, List, Optional, Protocol
 
 log = logging.getLogger("simp_publisher.assemble")
@@ -48,11 +49,14 @@ REGIONAL_NOTE = "区域说明：中国大陆可用性以来源原文为准，本
 
 
 class Translator(Protocol):
+    tier: str  # "mt" (translated) or "original" (source language kept)
     def translate(self, text: str, target: str = "zh-CN") -> str: ...
 
 
 class NullTranslator:
     """Original-language tier: returns text unchanged."""
+
+    tier = "original"
 
     def translate(self, text: str, target: str = "zh-CN") -> str:
         return text
@@ -67,13 +71,13 @@ def assemble_brief(pack: Dict[str, Any], date: str,
                    translator: Optional[Translator] = None) -> Dict[str, Any]:
     """Assemble one brief from a fact-pack dict. Pure + deterministic."""
     tr = translator or NullTranslator()
-    tier = "mt"
     try:
         title_zh = _truncate(tr.translate(pack["title"]), 60)
         kps = [_truncate(tr.translate(kp), 120)
                for kp in pack["key_points"][:MAX_KEY_POINTS]]
         if not title_zh or not any(kps):
             raise RuntimeError("empty translation output")
+        tier = tr.tier
     except Exception as exc:  # fail-safe -> original-language tier
         log.warning("translation failed (%s); using original-language tier", exc)
         tier = "original"
@@ -122,6 +126,28 @@ def assemble_brief(pack: Dict[str, Any], date: str,
         "tier": tier,
         "chars": len(text),
     }
+
+
+CJK_RE = re.compile(r"[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff]")
+MIN_CJK_RATIO = 0.5
+
+
+def cjk_ratio(text: str) -> float:
+    chars = [c for c in text if not c.isspace()]
+    if not chars:
+        return 0.0
+    return sum(1 for c in chars if CJK_RE.match(c)) / len(chars)
+
+
+def is_genuine_simplified_editorial(text: str,
+                                    min_ratio: float = MIN_CJK_RATIO) -> bool:
+    """Strict gate: editorial Chinese content must be predominantly CJK.
+
+    English source paragraphs — even inside Chinese scaffolding — must NOT
+    pass as Simplified Chinese editorial content. On failure the article is
+    SKIPPED, never published as English-disguised-as-Chinese.
+    """
+    return cjk_ratio(text) >= min_ratio
 
 
 def brief_fact_sentences(brief_text: str) -> List[str]:
