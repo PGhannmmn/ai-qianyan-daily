@@ -75,6 +75,19 @@ def _domain_ok(url: str) -> bool:
     host = (_up.urlparse(url).hostname or "").lower()
     return any(host == d or host.endswith("." + d) for d in TRUSTED_DOMAINS)
 
+# Custom domain for GitHub Pages. With Pages-source=GitHub-Actions the CNAME
+# file must be inside the deployed artifact (site/), so daily.py writes it
+# after every site build. Change this when the domain changes
+# (e.g. EU.org approved later).
+CUSTOM_DOMAIN = "orbisignalmedia.duckdns.org"
+
+
+def _write_cname(out_dir: str) -> None:
+    """Write the CNAME file GitHub Pages needs for the custom domain."""
+    os.makedirs(out_dir, exist_ok=True)
+    with open(os.path.join(out_dir, "CNAME"), "w", encoding="utf-8") as fh:
+        fh.write(CUSTOM_DOMAIN + "\n")
+
 def _default_feeds(R):
     return [
         R.FeedSource(name="Google Blog AI", kind="official",
@@ -92,6 +105,7 @@ def rss_fetch_default(source, _R=None):
 def _run_landing_only(date: str, out_dir: str, base_url: str) -> dict:
     """Phase 4.3 first deployment: landing page only, no articles."""
     result = sitegen.generate_site([], out_dir, base_url, dry_run=True)
+    _write_cname(out_dir)
     summary = {
         "date": date,
         "mode": "landing_only",
@@ -260,6 +274,7 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
     _write_briefs_as_drafts(date, briefs)
     all_dates = _all_draft_dates(date)
     result = sitegen.generate_site(all_dates, out_dir, base_url, dry_run=True)
+    _write_cname(out_dir)
 
     # 6. ALWAYS write the run log (heartbeat, even with zero articles)
     summary = {
