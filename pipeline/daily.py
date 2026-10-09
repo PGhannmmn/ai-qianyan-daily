@@ -53,7 +53,7 @@ def _load_full_pipeline():
     except ImportError:
         from vendor.simp_editorial import (  # noqa: E402,F401
             qa_draft_simp, qa_fact_pack)
-        from vendor.research import R  # noqa: E402,F401,E0611
+        from vendor import research as R  # noqa: E402
     return qa_draft_simp, qa_fact_pack, R
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
