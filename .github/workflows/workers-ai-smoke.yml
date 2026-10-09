@@ -11,11 +11,13 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+
     steps:
       - name: Verify Workers AI connection
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+
         run: |
           python - <<'PY'
           import json
@@ -31,7 +33,7 @@ jobs:
               sys.exit("FAIL: Missing GitHub secret or variable")
 
           url = (
-              f"https://api.cloudflare.com/client/v4/"
+              "https://api.cloudflare.com/client/v4/"
               f"accounts/{account}/ai/run/"
               "@cf/zai-org/glm-4.7-flash"
           )
@@ -45,13 +47,13 @@ jobs:
               ],
               "max_completion_tokens": 512,
               "chat_template_kwargs": {
-                "enable_thinking": False
-}
+                  "enable_thinking": False
+              }
           }
 
           req = urllib.request.Request(
               url,
-              data=json.dumps(payload).encode(),
+              data=json.dumps(payload).encode("utf-8"),
               headers={
                   "Authorization": f"Bearer {token}",
                   "Content-Type": "application/json"
@@ -72,6 +74,7 @@ jobs:
 
           result = data.get("result") or {}
           choices = result.get("choices") or []
+
           content = (
               (choices[0].get("message") or {}).get("content")
               if choices else result.get("response")
