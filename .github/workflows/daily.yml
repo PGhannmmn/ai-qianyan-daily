@@ -1,0 +1,63 @@
+# AI 前沿情报局 — 每日 AI 新闻摘要
+# Phase 4.3 受控部署：schedule 已停用，仅允许手动触发。
+
+name: Daily AI News Digest
+
+on:
+  # SCHEDULE DISABLED — do not enable without explicit user approval.
+  # schedule:
+  #   - cron: "37 0 * * *"
+  workflow_dispatch:
+    inputs:
+      landing_only:
+        description: "Build landing page only (no articles)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: daily-digest
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run pipeline
+        run: |
+          FLAGS=""
+          if [ "${{ inputs.landing_only }}" = "true" ]; then FLAGS="--landing-only"; fi
+          python pipeline/daily.py --date $(date -u +%F) --out site \
+            --base-url https://pghannmmn.github.io/ai-qianyan-daily/ $FLAGS
+
+      - name: Commit digest
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add site/ state/
+          git diff --cached --quiet || git commit -m "Daily digest $(date -u +%F)"
+          git push
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site/
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
