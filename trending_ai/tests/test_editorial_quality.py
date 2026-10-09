@@ -213,6 +213,13 @@ class EditorialTests(unittest.TestCase):
         self.assertIsNone(result)
         self.assertEqual(len(calls), 1)
 
+    def test_real_emulator_complexity_claim_fails_before_review(self):
+        value = story(FIXTURES[0])
+        value["why"] = "對於想研究遊戲架構或者喺唔同平台測試兼容性嘅用家嚟講，呢個工具可以直接將二進位檔案轉換，方便咁進行分析同埋驗證，而唔需要依賴模擬器嘅複雜設定。"
+        result, calls = self.generate(value, review())
+        self.assertIsNone(result)
+        self.assertEqual(len(calls), 1)
+
     def test_review_missing_source_boundary_flags_fails(self):
         verdict = review()
         del verdict["source_limitations_preserved"]
