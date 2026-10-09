@@ -1,0 +1,79 @@
+# GitHub Trending AI DRY_RUN (isolated, manual only)
+#
+# Purpose: Research GitHub Trending, generate a Cantonese summary via
+# Cloudflare Workers AI, format with V2, validate. DRY_RUN ONLY.
+#
+# Safety:
+# - Manual trigger only (workflow_dispatch). No schedule, no push/PR triggers.
+# - Cloudflare credentials scoped to the inference step only.
+# - NO Threads credentials. NO Threads API code in this workflow.
+# - Writes nothing: no dedup, no history, no commits, no deployment.
+# - Fails if LLM falls back to English or no candidate found.
+# - Does NOT modify the AI News workflow (daily.yml).
+
+name: Trending AI Dry Run
+
+on:
+  # Manual trigger only. Period restricted to daily for the first live
+  # DRY_RUN (weekly/monthly labels need separate validation).
+  workflow_dispatch:
+
+permissions:
+  contents: read  # Minimal; no write needed for dry-run.
+
+jobs:
+  trending-dry-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Run Trending AI dry-run
+        # Cloudflare credentials scoped to this step only.
+        # pipefail ensures Python failures propagate (not masked by sed).
+        # sed redacts Bearer tokens; pipefail preserves exit codes.
+        shell: bash
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ vars.CF_ACCOUNT_ID }}
+        run: |
+          set -o pipefail
+          python3 trending_ai/dry_run.py \
+            --period daily 2>&1 | \
+            sed -E 's/[Bb]earer [A-Za-z0-9._~-]+/Bearer [REDACTED]/g'
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            echo "::error::Dry-run failed with exit code $EXIT_CODE"
+            exit $EXIT_CODE
+          fi
+
+      - name: Confirm no state mutations
+        # Always runs, even if the AI step exits 1/2/3/4.
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Verify we are inside a Git worktree; a failed git status
+          # must never be misreported as a clean tree.
+          if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            echo "::error::Not inside a Git worktree; cannot verify cleanliness"
+            exit 1
+          fi
+          # Capture status safely (no pipe that could mask git failures).
+          STATUS="$(git status --porcelain --untracked-files=all)"
+          if [ -n "$STATUS" ]; then
+            echo "::error::Unexpected working tree changes:"
+            echo "$STATUS"
+            exit 1
+          fi
+          echo "OK: working tree clean, no state mutations"
