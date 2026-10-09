@@ -23,6 +23,7 @@ import argparse
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone
 
@@ -123,6 +124,42 @@ def _llm_brief(llm, pack, date: str):
             "date": date, "tier": "llm", "chars": len(text)}
 
 
+def _all_draft_dates(current_date: str) -> list:
+    """All dates with draft files, sorted, current date included.
+    Enables historical archive preservation across daily runs."""
+    import glob as _glob
+    pattern = os.path.join(sitegen.STATE_DIR, "simp_drafts_*.json")
+    dates = set()
+    for path in _glob.glob(pattern):
+        m = re.search(r"simp_drafts_(\d{4}-\d{2}-\d{2})\.json$", path)
+        if m:
+            dates.add(m.group(1))
+    dates.add(current_date)
+    return sorted(dates)
+
+
+def _published_urls() -> set:
+    """URLs already published on previous days (cross-day dedup).
+
+    Source of truth: the committed simp_drafts_*.json files. Every draft
+    written by _write_briefs_as_drafts carries its pack's URL, so scanning
+    them yields exactly what the site has published.
+    """
+    urls = set()
+    import glob as _glob
+    pattern = os.path.join(sitegen.STATE_DIR, "simp_drafts_*.json")
+    for path in _glob.glob(pattern):
+        try:
+            with open(path, encoding="utf-8") as fh:
+                data = json.load(fh)
+        except (json.JSONDecodeError, OSError):
+            continue
+        for d in data.get("drafts", []):
+            if d.get("url"):
+                urls.add(d["url"])
+    return urls
+
+
 def run_pipeline(date: str, out_dir: str, base_url: str,
                  fetch=None, translator=None,
                  landing_only: bool = False,
@@ -178,7 +215,13 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
     # so a rejected/skipped article can never shift its URL/title/date onto
     # another article (the old positional indexing had this bug).
     briefs = []
+    seen_urls = _published_urls()
+    if seen_urls:
+        log.info("cross-day dedup: %d URLs already published", len(seen_urls))
     for pack in packs[:2]:
+        if pack.url in seen_urls:
+            log.info("skipping already-published URL: %s", pack.url)
+            continue
         if llm is not None:
             b = _llm_brief(llm, pack, date)
             if b is None:
@@ -199,9 +242,12 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
         briefs.append((b, pack))
     log.info("briefs passing QA: %d", len(briefs))
 
-    # 5. site build from assembled briefs
+    # 5. site build from ALL historical briefs (new + previous days).
+    # Previous days' draft files are committed to the repo, so the site
+    # preserves archives, RSS, and sitemap across runs.
     _write_briefs_as_drafts(date, briefs)
-    result = sitegen.generate_site([date], out_dir, base_url, dry_run=True)
+    all_dates = _all_draft_dates(date)
+    result = sitegen.generate_site(all_dates, out_dir, base_url, dry_run=True)
 
     # 6. ALWAYS write the run log (heartbeat, even with zero articles)
     summary = {
