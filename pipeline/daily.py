@@ -266,6 +266,7 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
                      b["tier"], b["chars"], b["text"][:80])
         return {"date": date, "briefs": len(briefs),
                 "tiers": [b["tier"] for b, _ in briefs],
+                "safety_issues": [],
                 "dry_run": True}
 
     # 5. site build from ALL historical briefs (new + previous days).
