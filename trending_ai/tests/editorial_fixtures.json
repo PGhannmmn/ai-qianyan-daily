@@ -1,0 +1,160 @@
+{
+  "note": "Official README excerpts and editorial examples. Rank=1 and gain=100 in tests are synthetic formatting inputs, never asserted as real Trending observations. Examples are authored for offline evaluation, not five real Workers AI calls.",
+  "fixtures": [
+    {
+      "repo": "morluto/rea",
+      "category": "逆向工程",
+      "source": "See a feature in an app that you want in your own product? Ask your agent to investigate it with REA. It can inspect the app without its source code, explain how the feature works, show the evidence, and build a version for your project.\nREA connects your agent to tools for inspecting native binaries, JavaScript and Electron apps, .NET assemblies, and websites. You can also use the same tools from your terminal. Analysis runs locally, and results include the evidence and limitations behind each conclusion.\nStatic JavaScript and .NET inspection read the supplied files without running the application.",
+      "hook": "睇中一個 App 功能，冇原始碼可以點樣了解佢嘅做法？",
+      "problem": "想知道一個應用程式嘅功能點運作，手上卻只有安裝檔？REA 嘅官方文件就以分析冇原始碼嘅 App 作為使用情境。",
+      "solution": "REA 將 AI 助手接駁到分析工具，檢查 JavaScript、Electron 同原生程式檔案，回傳發現及依據。佢嘅分析結果會列出證據同限制，唔單止畀一句結論你。",
+      "why": "對想理解程式行為嘅讀者，值得留意嘅係可以沿住證據追查功能；靜態 JavaScript 分析亦唔需要先執行目標 App。",
+      "repo_id": 1209966933,
+      "description": "Reverse engineer anything with agents, from app behavior down to native binaries.",
+      "language": "TypeScript",
+      "license": "MIT",
+      "readme_url": "https://github.com/morluto/rea/blob/main/README.md",
+      "readme_blob_sha": "7509d81ea7dff1858c00a48e0a87ef0142b352e5",
+      "citations": {
+        "hook": [
+          "See a feature in an app that you want in your own product? Ask your agent to investigate it with REA. It can inspect the app without its source code, explain how the feature works, show the evidence, and build a version for your project."
+        ],
+        "problem": [
+          "See a feature in an app that you want in your own product? Ask your agent to investigate it with REA. It can inspect the app without its source code, explain how the feature works, show the evidence, and build a version for your project."
+        ],
+        "solution": [
+          "REA connects your agent to tools for inspecting native binaries, JavaScript and Electron apps, .NET assemblies, and websites. You can also use the same tools from your terminal. Analysis runs locally, and results include the evidence and limitations behind each conclusion."
+        ],
+        "why": [
+          "REA connects your agent to tools for inspecting native binaries, JavaScript and Electron apps, .NET assemblies, and websites. You can also use the same tools from your terminal. Analysis runs locally, and results include the evidence and limitations behind each conclusion.",
+          "Static JavaScript and .NET inspection read the supplied files without running the application."
+        ]
+      }
+    },
+    {
+      "repo": "astral-sh/uv",
+      "category": "Python 工具",
+      "source": "A single tool to replace `pip`, `pip-tools`, `pipx`, `poetry`, `pyenv`, `twine`, `virtualenv`, and more.\nuv manages project dependencies and environments, with support for lockfiles, workspaces, and more,\nsimilar to `rye` or `poetry`:\nuv manages dependencies and environments for single-file scripts.\nThen, run the script in an isolated virtual environment:\nuv installs Python and allows quickly switching between versions.\nReading inline script metadata from: example.py",
+      "hook": "想將 Python 版本、套件同執行環境放喺同一個工具管理？",
+      "problem": "一個 Python 專案要處理套件依賴同環境，單檔腳本亦有自己嘅依賴。uv 將呢啲工作列為同一個工具嘅管理範圍。",
+      "solution": "uv 可以安裝同切換 Python 版本，管理專案環境同鎖定依賴嘅檔案。特別值得留意係單檔腳本：佢可以讀取腳本內嘅依賴資料，再喺獨立環境執行，唔一定要先建完整專案。",
+      "why": "如果你有時寫小腳本、有時做完整專案，呢個設計畀你用同一套工具處理兩種工作，理解環境管理時有清楚嘅實際例子。",
+      "repo_id": 699532645,
+      "description": "An extremely fast Python package and project manager, written in Rust.",
+      "language": "Rust",
+      "license": "Apache-2.0",
+      "readme_url": "https://github.com/astral-sh/uv/blob/main/README.md",
+      "readme_blob_sha": "66caaf9ccc62add8c63de8e71184c9b7677377ad",
+      "citations": {
+        "hook": [
+          "A single tool to replace `pip`, `pip-tools`, `pipx`, `poetry`, `pyenv`, `twine`, `virtualenv`, and more."
+        ],
+        "problem": [
+          "uv manages project dependencies and environments, with support for lockfiles, workspaces, and more,",
+          "uv manages dependencies and environments for single-file scripts."
+        ],
+        "solution": [
+          "uv installs Python and allows quickly switching between versions.",
+          "uv manages project dependencies and environments, with support for lockfiles, workspaces, and more,",
+          "uv manages dependencies and environments for single-file scripts.\nThen, run the script in an isolated virtual environment:\nuv installs Python and allows quickly switching between versions.\nReading inline script metadata from: example.py"
+        ],
+        "why": [
+          "A single tool to replace `pip`, `pip-tools`, `pipx`, `poetry`, `pyenv`, `twine`, `virtualenv`, and more.",
+          "uv manages dependencies and environments for single-file scripts."
+        ]
+      }
+    },
+    {
+      "repo": "immich-app/immich",
+      "category": "相片管理",
+      "source": "High performance self-hosted photo and video management solution\n| Upload and view videos and photos            | Yes    | Yes |\n| Selective album(s) for backup                | Yes    | N/A |\n| Search by metadata, objects, faces, and CLIP | Yes    | Yes |\n| Facial recognition and clustering            | Yes    | Yes |\n⚠️ Always follow [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan for your precious photos and videos!",
+      "hook": "想自己管理相片，同時可以按人面同物件搵返照片？",
+      "problem": "自己架設相簿服務，除咗存放相片，仲可能想選擇備份邊啲手機相簿，同埋用相片內容搜尋。Immich 提供嘅就係呢類管理功能。",
+      "solution": "Immich 可以上傳同瀏覽相片及影片，手機端亦可以揀指定相簿備份。佢嘅搜尋支援人面、物件同相片資料，另有人面辨識及分組，讓自架相簿有按內容整理嘅方法。",
+      "why": "如果你想了解自架相簿可以做到啲乜，呢組功能好具體；但存放喺自己嘅服務唔等於萬無一失，官方仍提醒要另外做好備份。",
+      "repo_id": 455229168,
+      "description": "High performance self-hosted photo and video management solution.",
+      "language": "TypeScript",
+      "license": "AGPL-3.0",
+      "readme_url": "https://github.com/immich-app/immich/blob/main/README.md",
+      "readme_blob_sha": "ba774d44cdd7b9e9baed4cc4166d4c317e3ebae8",
+      "citations": {
+        "hook": [
+          "High performance self-hosted photo and video management solution",
+          "| Search by metadata, objects, faces, and CLIP | Yes    | Yes |"
+        ],
+        "problem": [
+          "High performance self-hosted photo and video management solution",
+          "| Selective album(s) for backup                | Yes    | N/A |",
+          "| Search by metadata, objects, faces, and CLIP | Yes    | Yes |"
+        ],
+        "solution": [
+          "| Upload and view videos and photos            | Yes    | Yes |\n| Selective album(s) for backup                | Yes    | N/A |",
+          "| Search by metadata, objects, faces, and CLIP | Yes    | Yes |\n| Facial recognition and clustering            | Yes    | Yes |"
+        ],
+        "why": [
+          "High performance self-hosted photo and video management solution",
+          "⚠️ Always follow [3-2-1](https://www.backblaze.com/blog/the-3-2-1-backup-strategy/) backup plan for your precious photos and videos!"
+        ]
+      }
+    },
+    {
+      "repo": "sharkdp/fd",
+      "category": "檔案搜尋",
+      "source": "`fd` is a program to find entries in your filesystem.\n* Intuitive syntax: `fd PATTERN` instead of `find -iname '*PATTERN*'`.\n* Regular expression (default) and glob-based patterns.\n* Ignores hidden directories and files, by default.\n* Ignores patterns from your `.gitignore`, by default.\nOften, we are interested in all files of a particular type. This can be done with the `-e` (or\n`--extension`) option.",
+      "hook": "只記得檔名一部分，想喺資料夾入面搵返個檔案？",
+      "problem": "搵檔案可以由名稱片段開始，亦可以只搵某種副檔名。fd 嘅使用指南就用呢兩種情境，示範點喺檔案系統搜尋。",
+      "solution": "fd 接收搜尋字樣，亦支援按副檔名篩選、正規表示式同檔名樣式。值得留意嘅係佢預設忽略隱藏檔案同 .gitignore 列出嘅項目，搜尋範圍會跟住呢啲設定。",
+      "why": "對開始接觸指令列嘅讀者，呢個例子可以直接理解「畀條件去搵檔案」；同時要記住，預設略過嘅項目未必會出現喺結果。",
+      "repo_id": 90793418,
+      "description": "A simple, fast and user-friendly alternative to 'find'",
+      "language": "Rust",
+      "license": "Apache-2.0",
+      "readme_url": "https://github.com/sharkdp/fd/blob/master/README.md",
+      "readme_blob_sha": "a259c1119e4afc4026ad75826e6b88ea3f7f583d",
+      "citations": {
+        "hook": [
+          "`fd` is a program to find entries in your filesystem.\n* Intuitive syntax: `fd PATTERN` instead of `find -iname '*PATTERN*'`.\n* Regular expression (default) and glob-based patterns.\n* Ignores hidden directories and files, by default.\n* Ignores patterns from your `.gitignore`, by default.\nOften, we are interested in all files of a particular type. This can be done with the `-e` (or\n`--extension`) option."
+        ],
+        "problem": [
+          "`fd` is a program to find entries in your filesystem.\n* Intuitive syntax: `fd PATTERN` instead of `find -iname '*PATTERN*'`.\n* Regular expression (default) and glob-based patterns.\n* Ignores hidden directories and files, by default.\n* Ignores patterns from your `.gitignore`, by default.\nOften, we are interested in all files of a particular type. This can be done with the `-e` (or\n`--extension`) option."
+        ],
+        "solution": [
+          "`fd` is a program to find entries in your filesystem.\n* Intuitive syntax: `fd PATTERN` instead of `find -iname '*PATTERN*'`.\n* Regular expression (default) and glob-based patterns.\n* Ignores hidden directories and files, by default.\n* Ignores patterns from your `.gitignore`, by default.\nOften, we are interested in all files of a particular type. This can be done with the `-e` (or\n`--extension`) option."
+        ],
+        "why": [
+          "`fd` is a program to find entries in your filesystem.\n* Intuitive syntax: `fd PATTERN` instead of `find -iname '*PATTERN*'`.\n* Regular expression (default) and glob-based patterns.\n* Ignores hidden directories and files, by default.\n* Ignores patterns from your `.gitignore`, by default.\nOften, we are interested in all files of a particular type. This can be done with the `-e` (or\n`--extension`) option."
+        ]
+      }
+    },
+    {
+      "repo": "syncthing/syncthing",
+      "category": "檔案同步",
+      "source": "Syncthing is a **continuous file synchronization program**. It synchronizes\nfiles between two or more computers.\n4. **Automatic**\nUser interaction should be required only when absolutely necessary.\nThere are a few examples for keeping Syncthing running in the background\non your system in [the etc directory][3].",
+      "hook": "同一批檔案想喺幾部電腦持續同步，可以點樣做？",
+      "problem": "當你想喺唔止一部電腦使用同一批檔案，要處理嘅係裝置之間嘅同步。Syncthing 嘅 README 將持續檔案同步列為核心用途。",
+      "solution": "Syncthing 會喺兩部或以上電腦之間同步檔案，文件亦提供喺背景運行嘅設定例子。佢嘅設計目標包括盡量減少需要用戶介入嘅操作，重點放喺持續同步呢個工作。",
+      "why": "如果你想研究跨電腦同步嘅開源做法，呢個專案嘅用途好清晰；背景運行嘅例子亦提供一個值得進一步睇文件嘅實際方向。",
+      "repo_id": 14712850,
+      "description": "Open Source Continuous File Synchronization",
+      "language": "Go",
+      "license": "MPL-2.0",
+      "readme_url": "https://github.com/syncthing/syncthing/blob/main/README.md",
+      "readme_blob_sha": "3167b1b4d3a85927d7dc4cd6d1fb98e22cd12a66",
+      "citations": {
+        "hook": [
+          "Syncthing is a **continuous file synchronization program**. It synchronizes\nfiles between two or more computers.\n4. **Automatic**\nUser interaction should be required only when absolutely necessary.\nThere are a few examples for keeping Syncthing running in the background\non your system in [the etc directory][3]."
+        ],
+        "problem": [
+          "Syncthing is a **continuous file synchronization program**. It synchronizes\nfiles between two or more computers.\n4. **Automatic**\nUser interaction should be required only when absolutely necessary.\nThere are a few examples for keeping Syncthing running in the background\non your system in [the etc directory][3]."
+        ],
+        "solution": [
+          "Syncthing is a **continuous file synchronization program**. It synchronizes\nfiles between two or more computers.\n4. **Automatic**\nUser interaction should be required only when absolutely necessary.\nThere are a few examples for keeping Syncthing running in the background\non your system in [the etc directory][3]."
+        ],
+        "why": [
+          "Syncthing is a **continuous file synchronization program**. It synchronizes\nfiles between two or more computers.\n4. **Automatic**\nUser interaction should be required only when absolutely necessary.\nThere are a few examples for keeping Syncthing running in the background\non your system in [the etc directory][3]."
+        ]
+      }
+    }
+  ]
+}

@@ -192,6 +192,9 @@ class Project:
     readme_url: str
     readme_sha256: str
     trend: Trend
+    # Official README snapshot, already bounded and checked for injection.
+    # Default preserves callers constructing the historical metadata record.
+    readme_text: str = ""
 
     def evidence(self) -> dict:
         return asdict(self)
@@ -257,4 +260,4 @@ class GitHubSource:
             raise SourceError("invalid repository language or license")
         return Project(rid, name, meta["html_url"], description.strip(), language,
                        license_id, stars, meta["pushed_at"], readme_url,
-                       hashlib.sha256(raw).hexdigest(), trend)
+                       hashlib.sha256(raw).hexdigest(), trend, text)

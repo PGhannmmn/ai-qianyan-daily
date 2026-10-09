@@ -13,7 +13,8 @@ from .sources import FetchError, GitHubSource, SourceError
 
 def run(source=None, *, history_path="work/github-trending.sqlite3", now=None,
         period="daily", locale="zh-CN", style="bilingual", translator=None,
-        limit=1, candidate_limit=8, stage=False, external_history=None) -> dict:
+        limit=1, candidate_limit=8, stage=False, external_history=None,
+        editor=None, recent_hooks=()) -> dict:
     now = now or datetime.now(timezone.utc)
     if now.tzinfo is None:
         raise ValueError("timezone-aware observation required")
@@ -26,6 +27,9 @@ def run(source=None, *, history_path="work/github-trending.sqlite3", now=None,
     external_ids, external_urls = load_external_history(external_history)
     ids |= external_ids
     urls |= external_urls
+    hooks = list(recent_hooks)
+    if editor is not None:
+        hooks.extend(history.recent_hooks())
     # Get history BEFORE spending requests or risking an empty corrupt ledger.
     trends = source.trending(period, now)
     drafts, rejected = [], []
@@ -39,6 +43,11 @@ def run(source=None, *, history_path="work/github-trending.sqlite3", now=None,
                 rejected.append({"repo": trend.name, "reason": "already-seen"})
                 continue
             draft = make_draft(project, now, locale, style, translator)
+            if editor is not None:
+                # Reject before identity reservation; try the next repository.
+                draft = editor(draft, tuple(hooks))
+                if not isinstance(draft, dict) or draft.get("publication_allowed") is not False:
+                    raise ValueError("editorial story rejected")
         except FetchError:
             raise
         except (SourceError, ValueError):
@@ -49,6 +58,8 @@ def run(source=None, *, history_path="work/github-trending.sqlite3", now=None,
             rejected.append({"repo": trend.name, "reason": "provider-failed"})
             continue
         drafts.append(draft)
+        if editor is not None:
+            hooks.append(draft["editorial_story"]["hook"])
         ids.add(project.repo_id)
         urls.add(project.url.lower())
         if len(drafts) >= limit:
