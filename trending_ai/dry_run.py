@@ -16,7 +16,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from trending_ai.github_trending.cantonese import generate_editorial_story
-from trending_ai.github_trending.formatter_v2 import TrendingRepo, format_story, utf16_len
+from trending_ai.github_trending.formatter_v2 import TrendingRepo, format_post, format_story, utf16_len
 from trending_ai.github_trending.runner import run as trending_run
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
@@ -49,9 +49,6 @@ def editorial_draft(draft: dict, recent_hooks=()) -> dict:
     from datetime import datetime
     from zoneinfo import ZoneInfo
     ev = draft["evidence"]
-    story = generate_editorial_story(ev, recent_hooks)
-    if not story:
-        raise ValueError("no evidence-reviewed story")
     trend = ev["trend"]
     if trend["period"] != "daily":
         raise ValueError("daily metadata required")
@@ -64,6 +61,13 @@ def editorial_draft(draft: dict, recent_hooks=()) -> dict:
         language=ev["language"], license=ev["license"],
         official_description=ev["description"],
     )
+    header, _, tail = format_post(repo).split("\n\n", 2)
+    header = header.replace("｜" + repo.name, "｜" + repo.owner + "/" + repo.name)
+    fixed_units = utf16_len(header + "\n" + tail) + 2
+    story = generate_editorial_story(ev, recent_hooks,
+                                     body_budget=(300 - fixed_units, 430 - fixed_units))
+    if not story:
+        raise ValueError("no evidence-reviewed story")
     text = format_story(repo, story)
     return dict(draft, text=text, chars_utf16=utf16_len(text),
                 editorial_story=story, tier="evidence-reviewed-cantonese-story",
