@@ -63,6 +63,29 @@ class WorkersAIError(RuntimeError):
     """Raised on any Workers AI failure. Callers must SKIP the article."""
 
 
+def extract_response_text(data: dict) -> str:
+    """Extract model text from Workers AI response. Supports:
+    1. Standard /ai/run format: {"success": true, "result": {"response": "..."}}
+    2. OpenAI-compatible: {"choices": [{"message": {"content": "..."}}]}
+    Raises WorkersAIError on API-level failure. Returns "" if no text found
+    (caller treats empty as failure -> SKIP).
+    """
+    if isinstance(data.get("success"), bool) and not data["success"]:
+        raise WorkersAIError(f"API error: {data.get('errors')}")
+    # Format 1: standard Workers AI
+    text = ((data.get("result") or {}).get("response") or "").strip()
+    if text:
+        return text
+    # Format 2: OpenAI-compatible chat completions
+    try:
+        text = (data["choices"][0]["message"]["content"] or "").strip()
+        if text:
+            return text
+    except (KeyError, IndexError, TypeError):
+        pass
+    return ""
+
+
 class WorkersAILLM:
     """LLM summarizer via Cloudflare Workers AI REST API."""
 
@@ -102,9 +125,7 @@ class WorkersAILLM:
             data = json.loads(raw.decode("utf-8"))
         except Exception as exc:
             raise WorkersAIError(f"request failed: {exc}") from exc
-        if not data.get("success"):
-            raise WorkersAIError(f"API error: {data.get('errors')}")
-        text = ((data.get("result") or {}).get("response") or "").strip()
+        text = extract_response_text(data)
         if not text:
             raise WorkersAIError("empty model response")
         return text
