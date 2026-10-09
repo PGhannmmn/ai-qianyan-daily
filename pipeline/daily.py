@@ -163,7 +163,8 @@ def _published_urls() -> set:
 def run_pipeline(date: str, out_dir: str, base_url: str,
                  fetch=None, translator=None,
                  landing_only: bool = False,
-                 use_llm: bool = False) -> dict:
+                 use_llm: bool = False,
+                 dry_run: bool = False) -> dict:
     """Run the full daily pipeline. Returns a summary dict."""
     if landing_only:
         return _run_landing_only(date, out_dir, base_url)
@@ -242,6 +243,17 @@ def run_pipeline(date: str, out_dir: str, base_url: str,
         briefs.append((b, pack))
     log.info("briefs passing QA: %d", len(briefs))
 
+    if dry_run:
+        # Private DRY_RUN: report, write nothing.
+        log.info("DRY_RUN: %d briefs would publish (writing nothing)",
+                 len(briefs))
+        for b, _ in briefs:
+            log.info("DRY_RUN brief [%s/%d chars]: %.80s...",
+                     b["tier"], b["chars"], b["text"][:80])
+        return {"date": date, "briefs": len(briefs),
+                "tiers": [b["tier"] for b, _ in briefs],
+                "dry_run": True}
+
     # 5. site build from ALL historical briefs (new + previous days).
     # Previous days' draft files are committed to the repo, so the site
     # preserves archives, RSS, and sitemap across runs.
@@ -296,12 +308,17 @@ def main() -> int:
     ap.add_argument("--llm", action="store_true",
                     help="use Cloudflare Workers AI for original Chinese "
                          "summaries (needs CF_API_TOKEN/CF_ACCOUNT_ID)")
+    ap.add_argument("--dry-run", action="store_true",
+                    help="private test: run research + LLM + QA, report what "
+                         "would publish, but write NOTHING (no drafts, no "
+                         "site, no commit)")
     args = ap.parse_args()
     # Third-party translation disabled: original-language tier only.
     summary = run_pipeline(args.date, args.out, args.base_url,
                            translator=NullTranslator(),
                            landing_only=args.landing_only,
-                           use_llm=args.llm)
+                           use_llm=args.llm,
+                           dry_run=args.dry_run)
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0 if not summary["safety_issues"] else 1
 
