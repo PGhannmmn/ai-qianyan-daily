@@ -251,18 +251,20 @@ STORY_SYSTEM_PROMPT = """
 只根據官方 description / README。唔編造用戶痛點、比較、效能、好處或能力。
 可以以「想完成來源明確支持嘅任務？」開場；唔聲稱所有人都遇到某問題。
 不要「個專案叫」「目的係令用家」「你有冇試過」；唔直譯簡介。
-hook 要源於具體任務，15–55 UTF-16 units，一行，避免 recent_hooks 嘅句式。
-problem：30–100 units，解釋具體需要；solution：70–155 units，提專案名，
+hook 要源於具體任務，12–55 UTF-16 units，一行，避免 recent_hooks 嘅句式。
+problem：25–100 units，解釋具體需要；solution：50–155 units，提專案名，
 解釋實際做法及一項特色；why：25–85 units，交代對該使用情境嘅實際意義。
-四段正文合計約 170–290 units，避免重複或填充；metadata 由程式產生。
+四段正文（包括段落間空行）必須符合 body_utf16_budget 嘅 min/max，
+以接近中間值為目標。寫足具體解法及價值，唔填充；metadata 由程式產生。
 唔加網址、排名、日期、Stars、授權；數字只可來自來源。避免術語堆砌。
-每段所有事實都要有 citations，引用來源逐字原文（可跨行；勿改寫引文）。
-引文必須真正支持相應內容，唔可以只提相同主題；每段一至三段短引文。
+每段所有事實都要有 citations，選擇 sources 入面支持該段嘅片段 id。
+只輸出 id，程式會取回原文；唔抄寫、翻譯、改寫或捏造引文。
+片段必須真正支持相應內容，唔可以只提相同主題；每段一至三個 id。
 若來源只有籠統口號、願景、沒有具體功能，或支持唔到有意思嘅問題解法，
 只回 {"status":"skip"}。
 否則只回 JSON：
 {"status":"story","hook":"...","problem":"...","solution":"...","why":"...",
- "citations":{"hook":["原文"],"problem":["原文"],"solution":["原文"],"why":["原文"]}}
+ "citations":{"hook":["R001"],"problem":["R001"],"solution":["R002"],"why":["R002"]}}
 """.strip()
 
 REVIEW_SYSTEM_PROMPT = """
@@ -314,9 +316,38 @@ def evidence_packet(evidence: dict) -> dict:
     if (p.scheme != "https" or p.netloc != "github.com" or p.query or p.fragment
             or not p.path.startswith("/" + name + "/blob/")):
         raise ValueError("unverified evidence URL")
+    bounded = readme[:MAX_README_PROMPT]
+    # Every span is copied verbatim from the validated snapshot. Stable IDs
+    # avoid asking the model to reproduce Markdown or translate quotations.
+    spans = [description[i:i + 600] for i in range(0, len(description), 600)
+             if len(description[i:i + 600]) >= 10]
+    for block in re.split(r"\n\s*\n", bounded):
+        block = block.strip()
+        if len(block) >= 10:
+            spans.extend(block[i:i + 600] for i in range(0, len(block), 600)
+                         if len(block[i:i + 600]) >= 10)
     return {"name": name, "description": description,
-            "language": evidence.get("language"),
-            "readme": readme[:MAX_README_PROMPT]}
+            "language": evidence.get("language"), "readme": bounded,
+            "sources": [{"id": f"R{i:03d}", "text": text}
+                        for i, text in enumerate(spans)]}
+
+
+def resolve_citations(story, packet):
+    """Unknown IDs fail closed; the model never supplies source quotations."""
+    if not isinstance(story, dict) or set(story) != STORY_KEYS:
+        raise ValueError("invalid story schema")
+    selected = story["citations"]
+    if not isinstance(selected, dict) or set(selected) != set(STORY_FIELDS):
+        raise ValueError("missing evidence")
+    catalog = {span["id"]: span["text"] for span in packet["sources"]}
+    quotes = {}
+    for field in STORY_FIELDS:
+        ids = selected[field]
+        if (not isinstance(ids, list) or not 1 <= len(ids) <= 3
+                or any(not isinstance(s, str) or s not in catalog for s in ids)):
+            raise ValueError("unknown evidence ID")
+        quotes[field] = [catalog[s] for s in ids]
+    return dict(story, citations=quotes)
 
 
 def validate_story(story: dict, packet: dict, recent_hooks=()) -> list[str]:
@@ -331,8 +362,8 @@ def validate_story(story: dict, packet: dict, recent_hooks=()) -> list[str]:
     issues = []
     source = packet["description"] + "\n" + packet["readme"]
     allowed_text = _normalized(source)
-    limits = {"hook": (15, 55), "problem": (30, 100),
-              "solution": (70, 155), "why": (25, 85)}
+    limits = {"hook": (12, 55), "problem": (25, 100),
+              "solution": (50, 155), "why": (25, 85)}
     for field in STORY_FIELDS:
         text = story.get(field)
         if not isinstance(text, str) or "\n" in text or "\r" in text:
@@ -394,8 +425,9 @@ def _editorial_request(llm, system: str, payload: dict) -> dict:
     return value
 
 
-def generate_editorial_story(evidence: dict, recent_hooks=(), _http=None) -> dict | None:
-    """Two bounded AI calls; skip on ANY evidence, generation or review failure."""
+def generate_editorial_story(evidence: dict, recent_hooks=(), _http=None,
+                             body_budget=(170, 290)) -> dict | None:
+    """Generation + review; at most one length-only revision, never waive QA."""
     try:
         packet = evidence_packet(evidence)
         from .editorial import unsafe_text
@@ -407,17 +439,38 @@ def generate_editorial_story(evidence: dict, recent_hooks=(), _http=None) -> dic
             log.info("Editorial AI unavailable; candidate skipped")
             return None
         llm = WorkersAILLM(_http=_http) if _http else WorkersAILLM()
-        story = _editorial_request(llm, STORY_SYSTEM_PROMPT,
-                                   {"official_sources": packet, "recent_hooks": list(recent_hooks)})
-        if story == {"status": "skip"}:
-            log.info("No supportable story; candidate skipped")
-            return None
-        issues = validate_story(story, packet, recent_hooks)
-        if issues:
+        from .formatter_v2 import utf16_len
+        if (len(body_budget) != 2 or any(type(n) is not int for n in body_budget)
+                or not 0 < body_budget[0] < body_budget[1] <= 430):
+            raise ValueError("invalid editorial budget")
+        prompt_packet = {k: v for k, v in packet.items() if k != "readme"}
+        payload = {"official_sources": prompt_packet, "recent_hooks": list(recent_hooks),
+                   "body_utf16_budget": {"min": body_budget[0], "max": body_budget[1]}}
+        for attempt in range(2):
+            generated = _editorial_request(llm, STORY_SYSTEM_PROMPT, payload)
+            if generated == {"status": "skip"}:
+                log.info("No supportable story; candidate skipped")
+                return None
+            story = resolve_citations(generated, packet)
+            issues = validate_story(story, packet, recent_hooks)
+            if all(isinstance(story.get(f), str) for f in STORY_FIELDS):
+                body_units = utf16_len("\n\n".join(story[f] for f in STORY_FIELDS))
+                if not body_budget[0] <= body_units <= body_budget[1]:
+                    issues.append("length-body")
+            if not issues:
+                break
+            if attempt == 0 and all(s.startswith("length-") for s in issues):
+                # Revise only length; unsupported evidence/claims never retry.
+                payload = dict(payload, length_feedback={
+                    "body_units": body_units,
+                    "field_units": {f: utf16_len(story[f]) for f in STORY_FIELDS},
+                    "issues": issues})
+                log.info("Editorial length revision requested")
+                continue
             log.warning("Editorial validation rejected (%s)", ",".join(issues))
             return None
         review = _editorial_request(llm, REVIEW_SYSTEM_PROMPT,
-                                    {"official_sources": packet, "draft": story})
+                                    {"official_sources": prompt_packet, "draft": story})
         if not validate_review(review):
             log.warning("Independent editorial review rejected")
             return None
