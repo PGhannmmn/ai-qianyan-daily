@@ -59,15 +59,43 @@ def transport(values, calls):
     return send
 
 
+def generated_story(value, evidence):
+    """Mock the new ID-only model contract, not model-supplied quotations."""
+    if not isinstance(value, dict) or value.get("status") != "story":
+        return value
+    result = copy.deepcopy(value)
+    packet = c.evidence_packet(evidence)
+    for field, quotes in result.get("citations", {}).items():
+        if not isinstance(quotes, list):
+            continue
+        ids = []
+        for quote in quotes:
+            if not isinstance(quote, str):
+                ids.append(quote)
+                continue
+            matches = [s["id"] for s in packet["sources"]
+                       if c._normalized(quote) in c._normalized(s["text"])
+                       or c._normalized(s["text"]) in c._normalized(quote)
+                       or c._normalized(quote[:30]) in c._normalized(s["text"])
+                       or c._normalized(quote[-30:]) in c._normalized(s["text"])]
+            ids.extend(matches or ["UNKNOWN"])
+        result["citations"][field] = list(dict.fromkeys(ids))[:3]
+    return result
+
+
 class EditorialTests(unittest.TestCase):
     def generate(self, value=None, verdict=None, recent=(), evidence=None):
         item = FIXTURES[0]
         calls = []
-        values = [value if value is not None else story(item),
-                  verdict if verdict is not None else review()]
+        ev = evidence or project(item).evidence()
+        try:
+            generated = generated_story(value if value is not None else story(item), ev)
+        except ValueError:
+            generated = value
+        values = [generated, verdict if verdict is not None else review()]
         with patch.dict(os.environ, {"CF_API_TOKEN": FAKE, "CF_ACCOUNT_ID": "account"}):
             result = c.generate_editorial_story(
-                evidence or project(item).evidence(), recent,
+                ev, recent,
                 _http=transport(values, calls))
         return result, calls
 
@@ -82,7 +110,8 @@ class EditorialTests(unittest.TestCase):
                 self.assertEqual(len(calls), 2)
                 first, second = [json.loads(req.data) for req in calls]
                 prompt = json.loads(first["messages"][1]["content"])
-                self.assertEqual(prompt["official_sources"]["readme"], item["source"])
+                self.assertNotIn("readme", prompt["official_sources"])
+                self.assertTrue(prompt["official_sources"]["sources"])
                 self.assertEqual(prompt["recent_hooks"], hooks)
                 self.assertEqual(second["messages"][0]["content"], c.REVIEW_SYSTEM_PROMPT)
                 with patch.object(dry_run, "generate_editorial_story", return_value=result):
@@ -203,7 +232,7 @@ class EditorialTests(unittest.TestCase):
 
     def test_second_call_failure_cannot_accept_generated_story(self):
         calls = []
-        values = [story(FIXTURES[0]), {}]
+        values = [generated_story(story(FIXTURES[0]), project(FIXTURES[0]).evidence()), {}]
         with patch.dict(os.environ, {"CF_API_TOKEN": FAKE, "CF_ACCOUNT_ID": "account"}):
             self.assertIsNone(c.generate_editorial_story(project(FIXTURES[0]).evidence(),
                                                        _http=transport(values, calls)))
@@ -212,6 +241,41 @@ class EditorialTests(unittest.TestCase):
     def test_no_credentials_does_not_call_cloudflare(self):
         with patch.dict(os.environ, {}, clear=True):
             self.assertIsNone(c.generate_editorial_story(project(FIXTURES[0]).evidence()))
+
+    def test_unknown_id_fails_and_quotes_are_backend_owned(self):
+        ev = project(FIXTURES[0]).evidence()
+        packet = c.evidence_packet(ev)
+        good = generated_story(story(FIXTURES[0]), ev)
+        resolved = c.resolve_citations(good, packet)
+        catalog = {s["id"]: s["text"] for s in packet["sources"]}
+        for field in c.STORY_FIELDS:
+            self.assertEqual(resolved["citations"][field], [catalog[s] for s in good["citations"][field]])
+        good["citations"]["problem"] = ["R9999"]
+        with self.assertRaises(ValueError):
+            c.resolve_citations(good, packet)
+
+    def test_one_length_revision_retains_all_evidence_and_review_gates(self):
+        ev = project(FIXTURES[0]).evidence()
+        too_short = story(FIXTURES[0])
+        too_short["problem"] = "想了解應用程式嘅功能點運作？"
+        calls = []
+        values = [generated_story(too_short, ev), generated_story(story(FIXTURES[0]), ev), review()]
+        with patch.dict(os.environ, {"CF_API_TOKEN": FAKE, "CF_ACCOUNT_ID": "account"}):
+            result = c.generate_editorial_story(ev, _http=transport(values, calls))
+        self.assertIsNotNone(result)
+        self.assertEqual(len(calls), 3)
+        revision = json.loads(json.loads(calls[1].data)["messages"][1]["content"])
+        self.assertIn("length_feedback", revision)
+
+    def test_repeated_length_failure_cannot_loop_or_pass(self):
+        ev = project(FIXTURES[0]).evidence()
+        value = story(FIXTURES[0])
+        value["problem"] = "想了解應用程式嘅功能點運作？"
+        calls = []
+        generated = generated_story(value, ev)
+        with patch.dict(os.environ, {"CF_API_TOKEN": FAKE, "CF_ACCOUNT_ID": "account"}):
+            self.assertIsNone(c.generate_editorial_story(ev, _http=transport([generated, generated], calls)))
+        self.assertEqual(len(calls), 2)
 
     def test_formatter_target_and_hard_limit_preserve_claims(self):
         item = FIXTURES[0]
