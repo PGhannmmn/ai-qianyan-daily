@@ -1,34 +1,8 @@
-"""Extractive Simplified-Chinese brief assembler (for GitHub Actions).
+"""Pure extractive brief assembly for the repository-local editorial gates.
 
-WHY THIS EXISTS: the Muse GitHub connector's write path (`github
-call-tool`) requires per-operation human approval, so a scheduled Muse
-cron CANNOT push daily drafts unattended — and bypassing that approval
-control is forbidden. The compliant architecture is therefore:
-
-  Muse's role  = one-time: the pipeline CODE is committed to the repo.
-  Daily loop   = GitHub Actions (schedule trigger): research -> fact-pack
-                 QA -> extractive assembly -> editorial QA -> site build
-                 -> commit (activity heartbeat) -> Pages deploy.
-  Secrets      = zero. The workflow uses only the automatic GITHUB_TOKEN
-                 (contents:write for the digest commit; pages:write +
-                 id-token:write for the Pages deploy). No PATs, no API keys.
-
-Assembly is deterministic and extractive: every factual sentence in the
-brief comes VERBATIM from the fact-pack's key_points (which are themselves
-verbatim extracts from the verified source). Fixed Chinese scaffolding
-(headline frame, disclosure, attribution, regional note) is template text.
-No claims are invented, by construction.
-
-Third-party machine translation is DISABLED (unverified external
-service). Assembly uses the original-language tier only: the title and key
-points appear verbatim as 原文标题 / 原文要点 inside fixed Chinese
-scaffolding. A pluggable Translator protocol remains for a future
-verified translation step; any translator failure falls back safely.
-
-The assembled briefs go through the SAME editorial QA gates as
-Muse-written drafts (simp_publisher.editorial.qa_draft_simp): real URL,
-Simplified-char check, regional-availability note, claim overlap >= 0.6,
-injection scan, length cap.
+Original-language output must pass the Chinese-content gate before use.
+Translator failures log only a fixed event, never source/exception text.
+This module performs no network requests, writes or deployment.
 """
 from __future__ import annotations
 
@@ -42,7 +16,7 @@ MAX_CHARS = 500
 MAX_KEY_POINTS = 3
 
 AI_DISCLOSURE_ASSEMBLED = (
-    "［AI 生成内容标识］本摘要由程序自动摘编（含机器翻译），未经人工撰写；"
+    "［AI 生成内容标识］本摘要由程序自动摘编，未经人工撰写；"
     "事实以所列来源原文为准。"
 )
 REGIONAL_NOTE = "区域说明：中国大陆可用性以来源原文为准，本站不作额外断言。"
@@ -78,8 +52,8 @@ def assemble_brief(pack: Dict[str, Any], date: str,
         if not title_zh or not any(kps):
             raise RuntimeError("empty translation output")
         tier = tr.tier
-    except Exception as exc:  # fail-safe -> original-language tier
-        log.warning("translation failed (%s); using original-language tier", exc)
+    except Exception:  # fail-safe -> original-language tier
+        log.warning("translation_failed")
         tier = "original"
         title_zh = _truncate(pack["title"], 60)
         kps = [_truncate(kp, 140) for kp in pack["key_points"][:MAX_KEY_POINTS]]

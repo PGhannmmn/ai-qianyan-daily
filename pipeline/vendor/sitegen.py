@@ -1,61 +1,32 @@
-"""Static-site generator for AI 前沿情报局 — DRY_RUN ONLY.
+"""Repository-local static rendering and local builds.
 
-Builds a standalone Simplified Chinese AI news website from the brand's
-*validated* drafts (state/simp_drafts_<date>.json, which already passed the
-editorial QA pipeline) plus the shared verified fact-packs (original
-publication dates, real source URLs).
-
-Output (all static, no build step needed on the host):
-  index.html            — homepage, latest articles
-  archives.html         — full archive index
-  articles/<date>-<n>.html — one page per article
-  about.html            — brand info + AI disclosure policy
-  sitemap.xml           — for search engines
-  feed.xml              — RSS 2.0
-  robots.txt
-
-Every page carries:
-  - the AI-generated-content disclosure (per 2025-09-01 labeling rules),
-  - the verified source name + real working source URL,
-  - the source's ORIGINAL publication date (from the fact-pack).
-
-DRY_RUN: generate_site() builds into a local directory only. The deploy()
-function exists for documentation but raises — no repository is created,
-no website is deployed, nothing is published until explicitly authorized.
-
-Publication records: record_site_publication() writes to the brand's OWN
-state/site_publications.jsonl — fully independent from the Simplified
-Threads account's records and from the Traditional publisher.
+render_site() is pure and powers CLI --dry-run. generate_site() writes a
+local directory only after safety screening. No deployment, publication
+record writer or dependency on another publisher workspace is present.
 """
 from __future__ import annotations
 
 import html
-import json
-import logging
 import os
-import re
 from datetime import datetime, timezone
+from email.utils import format_datetime
 from typing import Any, Dict, List, Optional
 from xml.sax.saxutils import escape as xml_escape
+from urllib.parse import urlsplit
 
-log = logging.getLogger("simp_publisher.sitegen")
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))  # src/simp_publisher
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATE_DIR = os.path.normpath(os.path.join(BASE_DIR, "..", "..", "state"))
-SHARED_STATE = os.path.expanduser(
-    "~/workspace/orbisignal-media/threads-publisher/state")
+from .safety import contains_injection, contains_sensitive, public_base_url
+from .storage import read_drafts, valid_date
+from .simp_editorial import validate_saved_draft
 
 BRAND_NAME = "AI 前沿情报局"
+CUSTOM_DOMAIN = "orbisignalmedia.duckdns.org"
 AI_DISCLOSURE_SHORT = "本文由 AI 辅助撰写"
 AI_DISCLOSURE_FULL = (
     "［AI 生成内容标识］本站内容由 AI 辅助撰写，经编辑流程校验；"
     "事实均引自文内所列来源，区域可用性说明以来源原文为准。"
 )
-
-SECRET_PATTERNS = re.compile(
-    r"hsurr:|Bearer\s+[A-Za-z0-9_\-]{16,}|sk-ant-|xox[bap]-|"
-    r"BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY", re.IGNORECASE)
-
 
 def _h(text: str) -> str:
     return html.escape(text, quote=True)
@@ -72,22 +43,16 @@ def _slug(date: str, index: int) -> str:
 
 
 def load_articles(dates: List[str]) -> List[Dict[str, Any]]:
-    """Load validated drafts + fact-pack metadata for the given dates."""
+    """Load source metadata solely from repository-local validated drafts."""
+    return articles_from_drafts({date: read_drafts(STATE_DIR, date)["drafts"] for date in dates})
+
+
+def articles_from_drafts(by_date: dict) -> List[Dict[str, Any]]:
     articles: List[Dict[str, Any]] = []
-    for date in dates:
-        drafts_path = os.path.join(STATE_DIR, f"simp_drafts_{date}.json")
-        packs_path = os.path.join(SHARED_STATE, f"news_factpacks_{date}.json")
-        if not os.path.exists(drafts_path):
-            log.warning("no drafts for %s — skipping", date)
-            continue
-        with open(drafts_path, encoding="utf-8") as fh:
-            drafts = json.load(fh)["drafts"]
-        packs: List[Dict[str, Any]] = []
-        if os.path.exists(packs_path):
-            with open(packs_path, encoding="utf-8") as fh:
-                packs = json.load(fh)["packs"]
+    for date, drafts in by_date.items():
+        valid_date(date)
         for i, d in enumerate(drafts):
-            pack = packs[d.get("fact_index", 0)] if packs else {}
+            validate_saved_draft(d)
             title = d["text"].split("\n")[0].strip("［］[]")[:60] or f"{BRAND_NAME}快讯"
             articles.append({
                 "slug": _slug(date, i),
@@ -95,11 +60,9 @@ def load_articles(dates: List[str]) -> List[Dict[str, Any]]:
                 "title": title,
                 "text": d["text"],
                 "source": d["source"],
-                # draft-level metadata wins (standalone/Actions mode);
-                # falls back to the shared fact-pack file (dual-brand mode)
-                "url": d.get("url") or pack.get("url", ""),
-                "published_at": d.get("published_at") or pack.get("published_at", ""),
-                "source_name": d.get("source_name") or pack.get("source_name", d["source"]),
+                "url": d["url"],
+                "published_at": d["published_at"],
+                "source_name": d.get("source_name", d["source"]),
             })
     articles.sort(key=lambda a: (a["date"], a["slug"]), reverse=True)
     return articles
@@ -212,7 +175,7 @@ def render_rss(articles: List[Dict[str, Any]], base_url: str) -> str:
             f"  <item><title>{xml_escape(a['title'])}</title>"
             f"<link>{xml_escape(base)}/articles/{a['slug']}.html</link>"
             f"<guid>{xml_escape(base)}/articles/{a['slug']}.html</guid>"
-            f"<pubDate>{xml_escape(a['date'])}</pubDate>"
+            f"<pubDate>{format_datetime(datetime.fromisoformat(a['date']).replace(tzinfo=timezone.utc), usegmt=True)}</pubDate>"
             f"<description>{xml_escape(AI_DISCLOSURE_SHORT + '：' + a['text'][:200])}</description>"
             f"</item>")
     return (f'<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -229,74 +192,69 @@ def render_robots(base_url: str) -> str:
             f"Sitemap: {base_url.rstrip('/')}/sitemap.xml\n")
 
 
+def check_rendered_safety(files: Dict[str, str]) -> List[str]:
+    issues = []
+    for name, content in files.items():
+        if contains_sensitive(content) or contains_injection(content):
+            issues.append("unsafe_rendered_content")
+        if name.endswith(".html") and "AI 生成内容标识" not in content:
+            issues.append("missing_disclosure")
+    return sorted(set(issues))
+
+
 def check_output_safety(out_dir: str) -> List[str]:
-    """Task 7: scan generated files for secrets / safety violations."""
-    issues: List[str] = []
-    for root, _, files in os.walk(out_dir):
-        for fn in files:
-            path = os.path.join(root, fn)
+    files = {}
+    for root, _, names in os.walk(out_dir):
+        for name in names:
             try:
-                with open(path, encoding="utf-8") as fh:
-                    content = fh.read()
-            except (UnicodeDecodeError, OSError):
-                continue
-            if SECRET_PATTERNS.search(content):
-                issues.append(f"{path}: possible secret material")
-            if "AI 生成内容标识" not in content and fn.endswith(".html"):
-                issues.append(f"{path}: missing AI disclosure")
-    return issues
+                with open(os.path.join(root, name), encoding="utf-8") as fh:
+                    files[name] = fh.read()
+            except (OSError, UnicodeError):
+                return ["unreadable_output"]
+    return check_rendered_safety(files)
 
 
-def record_site_publication(entries: List[Dict[str, Any]]) -> str:
-    """Append website publication records to the brand's OWN log."""
-    os.makedirs(STATE_DIR, exist_ok=True)
-    log_path = os.path.join(STATE_DIR, "site_publications.jsonl")
-    with open(log_path, "a", encoding="utf-8") as fh:
-        for e in entries:
-            rec = {"ts": datetime.now(timezone.utc).isoformat(),
-                   "channel": "website", **e}
-            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    return log_path
-
-
-def generate_site(dates: List[str], out_dir: str, base_url: str,
-                  dry_run: bool = True) -> Dict[str, Any]:
-    """Build the static site locally. DRY_RUN: no deploy, no records."""
-    if not dry_run:
-        raise RuntimeError(
-            "Site deploy is not enabled: no repository exists, no website "
-            "is deployed, and public publishing needs explicit user approval."
-        )
-    articles = load_articles(dates)
-    os.makedirs(os.path.join(out_dir, "articles"), exist_ok=True)
+def render_site(articles: List[Dict[str, Any]], base_url: str) -> Dict[str, str]:
+    """Pure in-memory renderer; no filesystem writes, records or deployment."""
+    base_url = public_base_url(base_url)
     pages = ["/", "/archives.html", "/about.html"]
-    files: Dict[str, str] = {
+    files = {
         "index.html": render_index(articles, base_url),
         "archives.html": render_archives(articles, base_url),
         "about.html": render_about(base_url),
     }
-    for a in articles:
-        rel = f"articles/{a['slug']}.html"
-        files[rel] = render_article(a, base_url)
+    for article in articles:
+        rel = f"articles/{article['slug']}.html"
+        files[rel] = render_article(article, base_url)
         pages.append("/" + rel)
     files["sitemap.xml"] = render_sitemap(pages, base_url)
     files["feed.xml"] = render_rss(articles, base_url)
     files["robots.txt"] = render_robots(base_url)
+    # Preserve main's custom-domain artifact for explicit local builds.
+    # Dry-run previews this only in memory, including landing-only previews.
+    if urlsplit(base_url).hostname == CUSTOM_DOMAIN:
+        files["CNAME"] = CUSTOM_DOMAIN + "\n"
+    return files
+
+
+def generate_site(dates: List[str], out_dir: str, base_url: str,
+                  dry_run: bool = True) -> Dict[str, Any]:
+    """Local build only. CLI --dry-run uses render_site and never calls this."""
+    if not dry_run:
+        raise RuntimeError("deployment_disabled")
+    articles = load_articles(dates)
+    files = render_site(articles, base_url)
+    safety = check_rendered_safety(files)
+    if safety:
+        return {"articles": len(articles), "files": [], "safety_issues": safety,
+                "network_calls": 0, "deployed": False}
+    os.makedirs(os.path.join(out_dir, "articles"), exist_ok=True)
     for rel, content in files.items():
-        with open(os.path.join(out_dir, rel), "w", encoding="utf-8") as fh:
+        with open(os.path.join(out_dir, rel), "w", encoding="utf-8", newline="\n") as fh:
             fh.write(content)
-    safety = check_output_safety(out_dir)
-    log.info("site built: %d articles, %d files, safety issues: %d",
-             len(articles), len(files), len(safety))
     return {"articles": len(articles), "files": sorted(files),
-            "safety_issues": safety, "network_calls": 0,
-            "deployed": False}
+            "safety_issues": [], "network_calls": 0, "deployed": False}
 
 
 def deploy(out_dir: str) -> None:
-    """NOT AUTHORIZED — documents the future deploy step only."""
-    raise RuntimeError(
-        "Deploy refused: creating the repository and publishing the site "
-        "requires the user's explicit approval (one-time actions documented "
-        "in SITE_PLAN.md)."
-    )
+    raise RuntimeError("deployment_disabled")
