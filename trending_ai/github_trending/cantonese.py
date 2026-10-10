@@ -29,14 +29,24 @@ import re
 
 log = logging.getLogger("github_trending.cantonese")
 
-# Import the bundled Workers AI client (repo-relative, no workspace deps).
+# Import the Workers AI client (try repo-relative, then workspace-relative).
 try:
     from trending_ai.llm import (  # noqa: E402
         WorkersAIError, WorkersAILLM, extract_response_text,
     )
     _LLM_AVAILABLE = True
 except ImportError:
-    _LLM_AVAILABLE = False
+    try:
+        # Local workspace: simp-publisher/actions_pipeline/pipeline/llm.py
+        import sys
+        from pathlib import Path
+        _LLM_PATH = Path(__file__).resolve().parents[2] / "simp-publisher" / "actions_pipeline" / "pipeline"
+        if str(_LLM_PATH) not in sys.path:
+            sys.path.insert(0, str(_LLM_PATH))
+        from llm import WorkersAIError, WorkersAILLM, extract_response_text  # noqa: E402
+        _LLM_AVAILABLE = True
+    except ImportError:
+        _LLM_AVAILABLE = False
 
 # --- Validation patterns ---
 
@@ -56,10 +66,15 @@ INJECTION_RE = re.compile(
 
 # Unsupported claim patterns: the summary must not invent these.
 # (Grounded in the official description only.)
+# Phase 3.5.1: Extended for editorial context (broader compatibility claims).
 UNSUPPORTED_CLAIM_RE = re.compile(
     # Compatibility claims
     r"(?:支援|支持|兼容|相容).{0,10}(?:所有|全部|各種|多种|多種)|"
     r"可以在.{0,15}(?:上|中)運行|"
+    # Broad porting claims (editorial): "所有遊戲", "全部移植"
+    r"(?:所有|全部).{0,8}(?:遊戲|應用|程式|軟件|軟件)|"
+    # Guarantee + capability (editorial): "保證玩得", "確保運行"
+    r"(?:保證|保证|確保).{0,12}(?:玩得|運行|運作|兼容|相容)|"
     # Performance claims
     r"(?:最快|更快|最高效|性能提升|效能提升)\d*|"
     # Release status claims
@@ -287,9 +302,10 @@ why 必須補充對同一情境嘅讀者意義或來源限制，唔再重複 sol
 AI 助手接駁分析工具，回傳發現同依據 → 可以沿線索追查，亦知道未能確認嘅部分。
 每段應自然串成一個具體故事；唔加書面「目的／使／讓」，唔把功能再抄一遍。
 不要「個專案叫」「目的係令用家」「你有冇試過」；唔直譯簡介。
-hook 要源於具體任務，12–55 UTF-16 units，一行，避免 recent_hooks 嘅句式。
-problem：25–100 units，解釋具體需要；solution：50–155 units，提專案名，
-解釋實際做法及一項特色；why：25–85 units，交代對該使用情境嘅實際意義。
+hook 要源於具體任務，8–80 UTF-16 units，一行，避免 recent_hooks 嘅句式。
+problem：20–140 units，解釋具體需要；solution：40–200 units，
+解釋實際做法及一項特色（唔使重複專案名，標題已經有）；why：20–120 units，
+交代對該使用情境嘅實際意義。
 四段正文（包括段落間空行）必須符合 body_utf16_budget 嘅 min/max，
 以接近中間值為目標。寫足具體解法及價值，唔填充；metadata 由程式產生。
 唔加網址、排名、日期、Stars、授權；數字只可來自來源。避免術語堆砌。
@@ -409,8 +425,10 @@ def validate_story(story: dict, packet: dict, recent_hooks=()) -> list[str]:
     issues = []
     source = packet["description"] + "\n" + packet["readme"]
     allowed_text = _normalized(source)
-    limits = {"hook": (12, 55), "problem": (25, 100),
-              "solution": (50, 155), "why": (25, 85)}
+    # Flexible per-field limits (Phase 3.5.1): focus on total body quality,
+    # not rigid per-section caps. Total body target: 170-290 UTF-16.
+    limits = {"hook": (8, 80), "problem": (20, 140),
+              "solution": (40, 200), "why": (20, 120)}
     for field in STORY_FIELDS:
         text = story.get(field)
         if not isinstance(text, str) or "\n" in text or "\r" in text:
@@ -442,8 +460,9 @@ def validate_story(story: dict, packet: dict, recent_hooks=()) -> list[str]:
     if issues:
         return issues
     body = "\n\n".join(story[f] for f in STORY_FIELDS)
-    if packet["name"].split("/")[-1].casefold() not in story["solution"].casefold():
-        issues.append("missing-project-name")
+    # NOTE (Phase 3.5.1): missing-project-name check REMOVED.
+    # The project name appears in the deterministic heading; requiring
+    # repetition in the solution body is redundant and rejects valid content.
     if not re.search(r"嘅|喺|唔|咗|點|搵|畀|佢|呢", body):
         issues.append("not-cantonese")
     if GENERIC_WHY.fullmatch(story["why"]):
@@ -460,6 +479,26 @@ def validate_review(review: dict) -> bool:
     return (isinstance(claims, dict) and set(claims) == set(STORY_FIELDS)
             and all(claims[f] == "supported" for f in STORY_FIELDS)
             and all(review[f] is True for f in REVIEW_FLAGS))
+
+
+def review_rejection_codes(review: dict) -> list[str]:
+    """Extract sanitized rejection reason codes from a failed review.
+    
+    Returns fixed codes only (field names + flag names). Never includes
+    raw model responses, source text, or credentials.
+    """
+    codes = []
+    if not isinstance(review, dict):
+        return ["invalid-review-schema"]
+    claims = review.get("claims", {})
+    if isinstance(claims, dict):
+        for field in STORY_FIELDS:
+            if claims.get(field) != "supported":
+                codes.append(f"claim-unsupported-{field}")
+    for flag in REVIEW_FLAGS:
+        if review.get(flag) is not True:
+            codes.append(f"flag-failed-{flag}")
+    return codes or ["review-rejected-unknown"]
 
 
 def _editorial_request(llm, system: str, payload: dict) -> dict:
@@ -542,7 +581,9 @@ def generate_editorial_story(evidence: dict, recent_hooks=(), _http=None,
         review = _editorial_request(llm, REVIEW_SYSTEM_PROMPT,
                                     {"official_sources": prompt_packet, "draft": story})
         if not validate_review(review):
-            log.warning("Independent editorial review rejected")
+            codes = review_rejection_codes(review)
+            log.warning("Independent editorial review rejected (%s)",
+                        ",".join(codes))
             return None
         log.info("Evidence-backed Cantonese story generated and reviewed via Workers AI")
         return {**story, "review": review}
