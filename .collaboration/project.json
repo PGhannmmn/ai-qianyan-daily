@@ -1,0 +1,24 @@
+{
+  "schema_version": "2.0",
+  "repository": "PGhannmmn/ai-qianyan-daily",
+  "code_authority": "GitHub",
+  "actors": [
+    "ChatGPT Work",
+    "Codex",
+    "Muse"
+  ],
+  "source_change_transport": "branch_and_draft_pr",
+  "merge_authority": "PGhannmmn",
+  "production_schedule_mutations_allowed": false,
+  "runtime_cutover_allowed": false,
+  "actions_role": [
+    "CI",
+    "offline tests",
+    "manual auxiliary tasks"
+  ],
+  "new_cron_allowed": false,
+  "muse_github_identity": null,
+  "muse_access": "not_verified",
+  "server_enforcement": "not_verified_or_changed",
+  "project_boundary": "Simplified-brand website and partial dry-run source; production Threads publisher remains in Muse Cloud workspace."
+}
