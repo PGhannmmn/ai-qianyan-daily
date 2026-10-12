@@ -1,0 +1,31 @@
+name: Agent implementation task
+description: Scoped source or offline-test task for Work, Codex and Muse
+title: "[Task] "
+body:
+  - type: input
+    id: task-id
+    attributes:
+      label: Task ID and active owner
+      description: Check open PRs before claiming; one active owner per task.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Repository, base SHA and allowed paths
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria and offline test commands
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and unknown access
+      description: Sanitized references only; no secrets or runtime payloads.
+  - type: markdown
+    attributes:
+      value: Source changes use draft PRs. Preserve Muse Cloud production schedules, runtime bindings and state. Owner approval is required for merging. Production, deployment and publication changes require separate explicit authorization.
